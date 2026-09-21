@@ -56,13 +56,11 @@ function JoinForm() {
           <div className="w-16 h-16 bg-[#5865f2] rounded-2xl flex items-center justify-center shadow-lg shadow-[#5865f2]/30 mb-4 transition-transform hover:scale-105">
             <Radio className="w-9 h-9 text-white animate-pulse" />
           </div>
-          <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-2">
-            Sesli Katılım <Sparkles className="w-5 h-5 text-[#5865f2]" />
+          <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
+            Voxa <Sparkles className="w-6 h-6 text-[#5865f2]" />
           </h1>
-          <p className="text-sm text-[#949ba4] mt-1">
-            Kayıt olmadan anında oda ismiyle katılın veya arkadaşlarınızı davet edin.
-          </p>
         </div>
+
 
         {/* Error Alert */}
         {error && (

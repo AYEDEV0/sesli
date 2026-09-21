@@ -3,9 +3,10 @@ import "@livekit/components-styles";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Sesli - Discord Kalitesinde Sesli Sohbet ve Ekran Paylaşımı",
-  description: "Next.js 14 ve LiveKit ile güçlendirilmiş yüksek kaliteli ses ve ekran paylaşımı uygulaması.",
+  title: "Voxa",
+  description: "Yüksek kaliteli sesli sohbet ve ekran paylaşımı uygulaması.",
 };
+
 
 export default function RootLayout({
   children,

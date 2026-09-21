@@ -58,7 +58,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   const [copied, setCopied] = useState<boolean>(false);
   const [selectedTrack, setSelectedTrack] = useState<TrackReferenceOrPlaceholder | null>(null);
-  const [chatOpen, setChatOpen] = useState<boolean>(true);
+  const [chatOpen, setChatOpen] = useState<boolean>(false);
+
   const [chatInput, setChatInput] = useState<string>("");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
