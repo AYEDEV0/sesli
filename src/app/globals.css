@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --foreground-rgb: 242, 243, 245;
+  --background-start-rgb: 30, 31, 34;
+  --background-end-rgb: 30, 31, 34;
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: #1e1f22;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+/* Custom LiveKit dark adjustments */
+.lk-room-container {
+  background-color: #1e1f22 !important;
+  color: #f2f3f5 !important;
+}
+
+/* Custom scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #2b2d31;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a1b1e;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #111214;
+}
