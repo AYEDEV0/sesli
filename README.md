@@ -86,9 +86,9 @@ ses/
 Projenin çalışması için kök dizinde `.env.local` dosyasının aşağıdaki anahtarları içermesi gerekir:
 
 ```env
-LIVEKIT_API_KEY=APIMeQAiA25GGbH
-LIVEKIT_API_SECRET=TZ3Nz3EafbzhOr5NQnHQ5v3EKO1xRiQMjMSvlm6D7BU
-NEXT_PUBLIC_LIVEKIT_URL=wss://sesli-rq0ve8k0.livekit.cloud
+LIVEKIT_API_KEY=your_livekit_api_key_here
+LIVEKIT_API_SECRET=your_livekit_api_secret_here
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-project.livekit.cloud
 ```
 
 ---
