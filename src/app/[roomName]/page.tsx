@@ -13,7 +13,9 @@ import {
   useChat,
   TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
-import { Track, RoomEvent } from "livekit-client";
+import { Track, RoomEvent, setLogLevel } from "livekit-client";
+
+setLogLevel("warn");
 import {
   Mic,
   MicOff,
