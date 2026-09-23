@@ -13,7 +13,7 @@ import {
   useChat,
   TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
-import { Track, AudioPresets } from "livekit-client";
+import { Track, RoomEvent } from "livekit-client";
 import {
   Mic,
   MicOff,
@@ -30,6 +30,7 @@ import {
   Minimize,
   Maximize2,
   Volume2,
+  VolumeX,
   Shield,
   Loader2,
   MessageSquare,
@@ -37,14 +38,53 @@ import {
   X,
   Settings,
   Sparkles,
+  Lock,
+  Unlock,
+  Sliders,
+  Tv,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
-
 
 interface RoomContentProps {
   roomName: string;
   username: string;
 }
+
+// Ekran Kalite Modları Konfigürasyonu
+const SCREEN_SHARE_PRESETS = {
+  "720p30": {
+    label: "⚡ Performans (720p / 30 FPS)",
+    width: 1280,
+    height: 720,
+    frameRate: 30,
+    maxBitrate: 1_500_000,
+  },
+  "1080p30": {
+    label: "🎬 Standart (1080p / 30 FPS)",
+    width: 1920,
+    height: 1080,
+    frameRate: 30,
+    maxBitrate: 3_000_000,
+  },
+  "1080p60": {
+    label: "🚀 Yüksek Hız (1080p / 60 FPS)",
+    width: 1920,
+    height: 1080,
+    frameRate: 60,
+    maxBitrate: 4_500_000,
+  },
+  "2k60": {
+    label: "🔥 Ultra 2K Sinematik (1440p / 60 FPS)",
+    width: 2560,
+    height: 1440,
+    frameRate: 60,
+    maxBitrate: 7_000_000,
+  },
+};
+
+type ScreenSharePresetKey = keyof typeof SCREEN_SHARE_PRESETS;
 
 function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const router = useRouter();
@@ -64,21 +104,74 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
+  // Oda Kilitleme Durumu
+  const [isRoomLocked, setIsRoomLocked] = useState<boolean>(false);
+  const [isLockingPending, setIsLockingPending] = useState<boolean>(false);
+
+  // Kullanıcı Bazlı Ses Düzeyleri (0-100) ve Mute Durumları
+  const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
+  const [userMutedState, setUserMutedState] = useState<Record<string, boolean>>({});
+
+  // Açık olan kullanıcı ses ayar popover'ı (identity)
+  const [openVolumeUserId, setOpenVolumeUserId] = useState<string | null>(null);
+
+  // Ekran Paylaşımı Kalitesi ve Ekran Sesi Ayarları
+  const [screenQuality, setScreenQuality] = useState<ScreenSharePresetKey>("2k60");
+  const [screenAudioEnabled, setScreenAudioEnabled] = useState<boolean>(true);
+  const [screenAudioVolume, setScreenAudioVolume] = useState<number>(100); // 0 - 100 %
+  const [isScreenAudioMuted, setIsScreenAudioMuted] = useState<boolean>(false);
+
   // LiveKit Krisp AI Gürültü Engelleme Filtresi Hook'u
   const { isNoiseFilterEnabled, setNoiseFilterEnabled, isNoiseFilterPending } =
     useKrispNoiseFilter();
 
   const initialAutoEnableRef = useRef<boolean>(false);
 
-  // Odaya girildiğinde ve mikrofon hazır olduğunda gürültü engelleme varsayılan AÇIK başlasın
+  // Gürültü filtresini varsayılan olarak aç
   useEffect(() => {
     if (!initialAutoEnableRef.current && isMicrophoneEnabled && !isNoiseFilterPending) {
       initialAutoEnableRef.current = true;
       setNoiseFilterEnabled(true).catch((err) => {
-        console.warn("Krisp AI Gürültü filtresi varsayılan olarak aktifleştirilirken uyarı:", err);
+        console.warn("Krisp AI Gürültü filtresi aktifleştirilirken uyarı:", err);
       });
     }
   }, [isMicrophoneEnabled, isNoiseFilterPending, setNoiseFilterEnabled]);
+
+  // Gürültü Filtresi Açıp/Kapatma İşleyicisi
+  const handleToggleNoiseFilter = async () => {
+    try {
+      await setNoiseFilterEnabled(!isNoiseFilterEnabled);
+    } catch (err) {
+      console.error("Gürültü filtresi değiştirilemedi:", err);
+    }
+  };
+
+  // Oda Metadata Dinleyicisi (Oda Kilidi Takibi)
+  useEffect(() => {
+    if (!room) return;
+
+    const parseMetadata = () => {
+      if (room.metadata) {
+        try {
+          const parsed = JSON.parse(room.metadata);
+          setIsRoomLocked(!!parsed.locked);
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    parseMetadata();
+
+    const handleRoomUpdate = () => {
+      parseMetadata();
+    };
+
+    room.on(RoomEvent.RoomMetadataChanged, handleRoomUpdate);
+    return () => {
+      room.off(RoomEvent.RoomMetadataChanged, handleRoomUpdate);
+    };
+  }, [room]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -97,7 +190,6 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
   }, []);
 
-
   // Toggle Fullscreen on Stage
   const toggleFullscreen = () => {
     if (!stageRef.current) return;
@@ -113,18 +205,121 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     }
   };
 
-  // Get camera and screen share tracks
-  const tracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], {
+  // Tüm Kamera, Ekran ve Mikrofon ses izlerini dinle
+  const videoTracks = useTracks([Track.Source.Camera, Track.Source.ScreenShare], {
     onlySubscribed: false,
   });
 
-  // Automatically locate active screen share track
-  const screenShareTrack = tracks.find(
+  const micTracks = useTracks([Track.Source.Microphone], {
+    onlySubscribed: false,
+  });
+
+  const screenShareAudioTracks = useTracks([Track.Source.ScreenShareAudio], {
+    onlySubscribed: false,
+  });
+
+  // Ekran paylaşımı video track'ini bul
+  const screenShareTrack = videoTracks.find(
     (t) => t.source === Track.Source.ScreenShare && t.publication?.isSubscribed !== false
   );
 
-  // Focus mode track: explicit selection OR auto-focus active screen share
+  // Ekran paylaşımı ses track'ini bul
+  const activeScreenShareAudio = screenShareAudioTracks.find(
+    (t) => t.source === Track.Source.ScreenShareAudio && t.publication?.isSubscribed !== false
+  );
+
+  // Odaklanan Medya İzleri
   const activeFocusTrack = selectedTrack || screenShareTrack || null;
+
+  // Ekran Ses Düzeyini Güncelle (HTMLMediaElement volume [0.0, 1.0] aralığında olmalıdır)
+  useEffect(() => {
+    if (activeScreenShareAudio?.publication?.track) {
+      try {
+        const audioTrack = activeScreenShareAudio.publication.track as any;
+        if (typeof audioTrack.setVolume === "function") {
+          const rawVol = isScreenAudioMuted ? 0 : screenAudioVolume / 100;
+          const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
+          audioTrack.setVolume(safeVol);
+        }
+      } catch (e) {
+        console.warn("Ekran ses düzeyi ayarlama hatası:", e);
+      }
+    }
+  }, [activeScreenShareAudio, screenAudioVolume, isScreenAudioMuted]);
+
+  // Bireysel Kullanıcı Ses Düzeyini Güncelleme Fonksiyonu
+  const applyUserVolume = (identity: string, volumePercent: number, isMuted: boolean) => {
+    const rawVol = isMuted ? 0 : volumePercent / 100;
+    const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
+
+    // 1. Mic tracks listesinden ses izini güncelle
+    const micTrackRef = micTracks.find((t) => t.participant.identity === identity);
+    if (micTrackRef?.publication?.track) {
+      try {
+        (micTrackRef.publication.track as any).setVolume(safeVol);
+      } catch (e) {
+        console.warn("Track setVolume hatası:", e);
+      }
+    }
+
+    // 2. Katılımcı nesnesi üzerindeki yayınlardan güncelle
+    const participant = participants.find((p) => p.identity === identity);
+    if (participant) {
+      participant.audioTrackPublications.forEach((pub) => {
+        if (pub.track) {
+          try {
+            (pub.track as any).setVolume(safeVol);
+          } catch (e) {
+            console.warn("Participant track setVolume hatası:", e);
+          }
+        }
+      });
+    }
+  };
+
+  const handleUserVolumeChange = (identity: string, newVolume: number) => {
+    const clampedVol = Math.min(100, Math.max(0, newVolume));
+    setUserVolumes((prev) => ({ ...prev, [identity]: clampedVol }));
+    const isMuted = !!userMutedState[identity];
+    applyUserVolume(identity, clampedVol, isMuted);
+  };
+
+  // Bireysel Kullanıcı Mute Geçiş Fonksiyonu
+  const handleToggleUserMute = (identity: string) => {
+    const isCurrentlyMuted = !!userMutedState[identity];
+    const nextMuted = !isCurrentlyMuted;
+    setUserMutedState((prev) => ({ ...prev, [identity]: nextMuted }));
+
+    const currentVol = userVolumes[identity] ?? 100;
+    applyUserVolume(identity, currentVol, nextMuted);
+  };
+
+  // Oda Kilitleme / Kilit Açma
+  const toggleRoomLock = async () => {
+    try {
+      setIsLockingPending(true);
+      const res = await fetch("/api/room/lock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          room: roomName,
+          locked: !isRoomLocked,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Oda kilit durumu değiştirilemedi.");
+      }
+
+      setIsRoomLocked(!isRoomLocked);
+    } catch (err) {
+      console.error("Oda kilit hatası:", err);
+      alert(err instanceof Error ? err.message : "Oda kilitlenirken bir hata oluştu.");
+    } finally {
+      setIsLockingPending(false);
+    }
+  };
 
   // Copy Invite Link to Clipboard
   const handleCopyInvite = useCallback(() => {
@@ -152,11 +347,41 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     }
   };
 
+  // Ekran Paylaşımı (2K / 60 FPS + Ekran Sesi Yakalama Desteği)
   const toggleScreenShare = async () => {
     try {
-      await localParticipant.setScreenShareEnabled(!isScreenShareEnabled);
+      if (isScreenShareEnabled) {
+        await localParticipant.setScreenShareEnabled(false);
+      } else {
+        const preset = SCREEN_SHARE_PRESETS[screenQuality];
+        await localParticipant.setScreenShareEnabled(
+          true,
+          {
+            audio: screenAudioEnabled
+              ? {
+                  echoCancellation: false,
+                  noiseSuppression: false,
+                  autoGainControl: false,
+                }
+              : false,
+            resolution: {
+              width: preset.width,
+              height: preset.height,
+              frameRate: preset.frameRate,
+            },
+            selfBrowserSurface: "include",
+            surfaceSwitching: "include",
+          },
+          {
+            videoEncoding: {
+              maxBitrate: preset.maxBitrate,
+              maxFramerate: preset.frameRate,
+            },
+          }
+        );
+      }
     } catch (err) {
-      console.error("Ekran paylaşımı değiştirilemedi:", err);
+      console.error("Ekran paylaşımı başlatılamadı:", err);
     }
   };
 
@@ -180,16 +405,23 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#1e1f22] text-[#f2f3f5] overflow-hidden select-none">
-      {/* ÜST DAVET VE ODA BARI */}
+      {/* ÜST DAVET, ODA KİLİDİ VE ODA BARI */}
       <header className="h-16 bg-[#2b2d31] border-b border-[#1e1f22] px-6 flex items-center justify-between z-20 shadow-md">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-[#5865f2] rounded-xl flex items-center justify-center shadow">
             <Radio className="w-5 h-5 text-white animate-pulse" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-white tracking-wide">
-              #{roomName}
-            </h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-base font-bold text-white tracking-wide">
+                #{roomName}
+              </h1>
+              {isRoomLocked && (
+                <span className="bg-[#f23f43]/20 border border-[#f23f43]/40 text-[#f23f43] text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Lock className="w-3 h-3" /> Oda Kilitli
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -199,6 +431,32 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
             <Users className="w-4 h-4 text-[#5865f2]" />
             <span>{participants.length} Katılımcı</span>
           </div>
+
+          {/* Room Lock Button */}
+          <button
+            onClick={toggleRoomLock}
+            disabled={isLockingPending}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border shadow ${
+              isRoomLocked
+                ? "bg-[#f23f43] hover:bg-[#d8363a] text-white border-[#f23f43]"
+                : "bg-[#1e1f22] hover:bg-[#35373c] text-[#949ba4] border-[#313338]"
+            } disabled:opacity-50`}
+            title={isRoomLocked ? "Oda Kilidini Aç" : "Odayı Kilitle (Yeni Katılımcıları Engelle)"}
+          >
+            {isLockingPending ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : isRoomLocked ? (
+              <>
+                <Lock className="w-4 h-4 text-white" />
+                <span className="hidden sm:inline">Kilitli Oda</span>
+              </>
+            ) : (
+              <>
+                <Unlock className="w-4 h-4" />
+                <span className="hidden sm:inline">Odayı Kilitle</span>
+              </>
+            )}
+          </button>
 
           {/* Toggle Chat Button */}
           <button
@@ -261,8 +519,11 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 {activeFocusTrack.source === Track.Source.ScreenShare ? (
                   <>
                     <Monitor className="w-4 h-4 text-[#5865f2]" />
-                    <span>
-                      {activeFocusTrack.participant.identity} kullanıcısının ekranı
+                    <span className="font-semibold">
+                      {activeFocusTrack.participant.identity} kullanıcısının canlı yayını
+                    </span>
+                    <span className="bg-[#5865f2] text-white text-[10px] font-black px-1.5 py-0.5 rounded">
+                      {SCREEN_SHARE_PRESETS[screenQuality].label.split(" ")[1]}
                     </span>
                   </>
                 ) : (
@@ -272,6 +533,54 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                   </>
                 )}
               </div>
+
+              {/* Herhangi bir Ekran Paylaşımı İzlenirken Daima Görünür Canlı Yayın Ses Kısma Barı */}
+              {activeFocusTrack.source === Track.Source.ScreenShare && (
+                <div className="absolute bottom-4 left-4 bg-black/85 backdrop-blur-md p-3 rounded-2xl border border-white/20 text-xs text-white flex items-center gap-3 shadow-2xl z-30">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsScreenAudioMuted(!isScreenAudioMuted);
+                    }}
+                    className="p-2 bg-[#5865f2]/20 hover:bg-[#5865f2]/40 rounded-xl transition-colors text-[#5865f2]"
+                    title={isScreenAudioMuted ? "Yayın Sesini Aç" : "Yayın Sesini Kapat"}
+                  >
+                    {isScreenAudioMuted || screenAudioVolume === 0 ? (
+                      <VolumeX className="w-5 h-5 text-[#f23f43]" />
+                    ) : (
+                      <Volume2 className="w-5 h-5 text-[#23a55a]" />
+                    )}
+                  </button>
+                  <div className="flex flex-col">
+                    <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                      <Radio className="w-3.5 h-3.5 text-[#5865f2] animate-pulse" />
+                      Yayın Sesi
+                    </span>
+                    <span className="text-[10px] text-[#949ba4]">
+                      {activeScreenShareAudio ? "Sistem Sesi Aktif" : "Yayıncı Ses Kontrolü"}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={isScreenAudioMuted ? 0 : screenAudioVolume}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      const val = Number(e.target.value);
+                      setScreenAudioVolume(val);
+                      if (isScreenAudioMuted) setIsScreenAudioMuted(false);
+                      if (activeFocusTrack.participant) {
+                        handleUserVolumeChange(activeFocusTrack.participant.identity, val);
+                      }
+                    }}
+                    className="w-28 h-1.5 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#5865f2]"
+                  />
+                  <span className="text-[11px] w-8 font-mono text-white text-right font-bold">
+                    %{isScreenAudioMuted ? 0 : screenAudioVolume}
+                  </span>
+                </div>
+              )}
 
               {/* Top Right Action Buttons (Tam Ekran & Reset Focus) */}
               <div className="absolute top-4 right-4 flex items-center gap-2">
@@ -309,7 +618,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 Sesli Odadasınız
               </h3>
               <p className="text-sm text-[#949ba4] max-w-sm mb-6">
-                Biri ekran paylaşımı açtığında veya kamera çalıştırdığında yayın burada canlı olarak görüntülenecek.
+                Biri ekran paylaşımı açtığında veya kamera çalıştırdığında yayın burada yüksek kalite 2K çözünürlükle canlı görüntülenecek.
               </p>
 
               {/* General Fullscreen Button even without video track */}
@@ -324,59 +633,128 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
           )}
         </div>
 
-        {/* KATILIMCI GRID (Sağ Yan Panel) */}
-        <div className="w-72 bg-[#2b2d31] border border-[#313338] rounded-2xl p-3 flex flex-col gap-3 overflow-y-auto">
+        {/* KATILIMCI GRID & SES DÜZEYİ KONTROLLERİ (Sağ Yan Panel) */}
+        <div className="w-80 bg-[#2b2d31] border border-[#313338] rounded-2xl p-3 flex flex-col gap-3 overflow-y-auto">
           <div className="text-xs font-bold uppercase tracking-wider text-[#949ba4] px-2 pt-1 flex items-center justify-between">
             <span>Katılımcılar ({participants.length})</span>
             <Shield className="w-3.5 h-3.5 text-[#5865f2]" />
           </div>
 
-          <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col gap-3">
             {participants.map((p) => {
-              const pTrack = tracks.find(
+              const pTrack = videoTracks.find(
                 (t) => t.participant.identity === p.identity && t.publication?.isSubscribed !== false
               );
 
               const isSpeaking = p.isSpeaking;
+              const isMe = p.isLocal;
+              const vol = userVolumes[p.identity] ?? 100;
+              const isUserMuted = !!userMutedState[p.identity];
+              const isVolumeOpen = openVolumeUserId === p.identity;
 
               return (
                 <div
                   key={p.identity}
-                  onClick={() => pTrack && setSelectedTrack(pTrack)}
-                  className={`p-3 rounded-xl bg-[#313338] border transition-all flex items-center justify-between cursor-pointer hover:border-[#5865f2] ${
+                  className={`p-3 rounded-xl bg-[#313338] border transition-all flex flex-col gap-2.5 ${
                     isSpeaking ? "ring-2 ring-[#23a55a] border-transparent" : "border-[#1e1f22]"
                   }`}
                 >
-                  <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="relative">
-                      <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow">
-                        {p.identity.slice(0, 2).toUpperCase()}
+                  <div className="flex items-center justify-between">
+                    <div
+                      onClick={() => pTrack && setSelectedTrack(pTrack)}
+                      className="flex items-center gap-3 overflow-hidden cursor-pointer flex-1"
+                    >
+                      <div className="relative flex-shrink-0">
+                        <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow">
+                          {p.identity.slice(0, 2).toUpperCase()}
+                        </div>
+                        {isSpeaking && (
+                          <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#23a55a] rounded-full border-2 border-[#313338] flex items-center justify-center">
+                            <Volume2 className="w-2.5 h-2.5 text-white" />
+                          </span>
+                        )}
                       </div>
-                      {isSpeaking && (
-                        <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#23a55a] rounded-full border-2 border-[#313338] flex items-center justify-center">
-                          <Volume2 className="w-2.5 h-2.5 text-white" />
-                        </span>
+
+                      <div className="truncate">
+                        <p className="text-sm font-semibold text-white truncate">
+                          {p.identity} {isMe && "(Siz)"}
+                        </p>
+                        <p className="text-xs text-[#949ba4] flex items-center gap-1">
+                          {p.isSpeaking ? (
+                            <span className="text-[#23a55a]">Konuşuyor...</span>
+                          ) : (
+                            <span>Sessiz</span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[#949ba4] flex-shrink-0">
+                      {!p.isMicrophoneEnabled && <MicOff className="w-4 h-4 text-[#f23f43]" />}
+                      {p.isScreenShareEnabled && <Monitor className="w-4 h-4 text-[#5865f2] animate-pulse" />}
+
+                      {/* Diğer Kullanıcıların Ses Düzeyi Popover Açma Butonu */}
+                      {!isMe && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenVolumeUserId(isVolumeOpen ? null : p.identity);
+                          }}
+                          className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
+                            isVolumeOpen || isUserMuted
+                              ? "bg-[#5865f2]/20 border-[#5865f2] text-white"
+                              : "bg-[#1e1f22] border-[#2b2d31] hover:bg-[#35373c] text-[#949ba4]"
+                          }`}
+                          title="Kullanıcı Ses Seviyesini Ayarla"
+                        >
+                          {isUserMuted || vol === 0 ? (
+                            <VolumeX className="w-3.5 h-3.5 text-[#f23f43]" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5 text-[#23a55a]" />
+                          )}
+                          {isVolumeOpen ? (
+                            <ChevronUp className="w-3 h-3" />
+                          ) : (
+                            <ChevronDown className="w-3 h-3" />
+                          )}
+                        </button>
                       )}
                     </div>
+                  </div>
 
-                    <div className="truncate">
-                      <p className="text-sm font-semibold text-white truncate">
-                        {p.identity} {p.isLocal && "(Siz)"}
-                      </p>
-                      <p className="text-xs text-[#949ba4] flex items-center gap-1">
-                        {p.isSpeaking ? (
-                          <span className="text-[#23a55a]">Konuşuyor...</span>
+                  {/* Remote Participant Local Volume Controls (Sadece ses butonuna tıklanınca açılır) */}
+                  {!isMe && isVolumeOpen && (
+                    <div className="pt-2.5 border-t border-[#2b2d31] flex items-center gap-2 bg-[#1e1f22]/80 p-2.5 rounded-xl animate-in fade-in duration-150">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleUserMute(p.identity);
+                        }}
+                        className="p-1.5 hover:bg-[#313338] rounded-lg transition-colors text-[#949ba4] hover:text-white"
+                        title={isUserMuted ? "Kullanıcının Sesini Aç" : "Kullanıcının Sesini Kapat"}
+                      >
+                        {isUserMuted || vol === 0 ? (
+                          <VolumeX className="w-4 h-4 text-[#f23f43]" />
                         ) : (
-                          <span>Sessiz</span>
+                          <Volume2 className="w-4 h-4 text-[#23a55a]" />
                         )}
-                      </p>
+                      </button>
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={isUserMuted ? 0 : vol}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          handleUserVolumeChange(p.identity, Number(e.target.value));
+                        }}
+                        className="flex-1 h-1.5 bg-[#313338] rounded-lg appearance-none cursor-pointer accent-[#5865f2]"
+                      />
+                      <span className="text-[10px] w-8 font-mono text-[#949ba4] text-right font-bold">
+                        %{isUserMuted ? 0 : vol}
+                      </span>
                     </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5 text-[#949ba4]">
-                    {!p.isMicrophoneEnabled && <MicOff className="w-4 h-4 text-[#f23f43]" />}
-                    {p.isScreenShareEnabled && <Monitor className="w-4 h-4 text-[#5865f2] animate-pulse" />}
-                  </div>
+                  )}
                 </div>
               );
             })}
@@ -519,7 +897,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ? "bg-[#5865f2] hover:bg-[#4752c4] text-white"
                 : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
             }`}
-            title={isScreenShareEnabled ? "Ekran Paylaşımını Durdur" : "Ekran Paylaş"}
+            title={isScreenShareEnabled ? "Ekran Paylaşımını Durdur" : "2K Ekran Paylaşımını Başlat"}
           >
             {isScreenShareEnabled ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
           </button>
@@ -545,7 +923,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ? "bg-[#5865f2] hover:bg-[#4752c4] text-white"
                 : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
             }`}
-            title="Ses ve Görüşme Ayarları"
+            title="Ses, Yayın Kalitesi ve Görüşme Ayarları"
           >
             <Settings className="w-5 h-5" />
             {isNoiseFilterEnabled && (
@@ -569,19 +947,19 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
         <div className="hidden sm:block w-32" />
       </footer>
 
-      {/* SES VE GÖRÜŞME AYARLARI MODAL */}
+      {/* SES, YAYIN KALİTESİ VE GÖRÜŞME AYARLARI MODAL */}
       {settingsOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-[#2b2d31] border border-[#383a40] rounded-2xl w-full max-w-md shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-[#2b2d31] border border-[#383a40] rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-6 py-4 bg-[#1e1f22] border-b border-[#313338] flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 bg-[#5865f2]/20 rounded-xl flex items-center justify-center text-[#5865f2]">
-                  <Settings className="w-5 h-5" />
+                  <Sliders className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-sm font-bold text-white tracking-wide">Ses ve Görüşme Ayarları</h2>
-                  <p className="text-xs text-[#949ba4]">Mikrofon ve filtre ayarlarınızı yapılandırın</p>
+                  <h2 className="text-sm font-bold text-white tracking-wide">Ses & Yayın Ayarları</h2>
+                  <p className="text-xs text-[#949ba4]">Krisp AI, Yayın Kalitesi ve Ekran Sesi tercihlerini yapılandırın</p>
                 </div>
               </div>
               <button
@@ -593,9 +971,12 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 flex flex-col gap-5">
-              {/* Krisp AI Noise Filter Option */}
-              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex items-center justify-between gap-4">
+            <div className="p-6 flex flex-col gap-5 max-h-[75vh] overflow-y-auto">
+              {/* 1. Krisp AI Noise Filter Option */}
+              <div
+                onClick={handleToggleNoiseFilter}
+                className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] hover:border-[#5865f2]/50 flex items-center justify-between gap-4 transition-all cursor-pointer"
+              >
                 <div className="flex items-start gap-3">
                   <div
                     className={`p-2.5 rounded-xl mt-0.5 transition-colors ${
@@ -614,7 +995,84 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                       </span>
                     </div>
                     <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
-                      Arka plandaki gürültüleri, klavye seslerini ve yankıyı otomatik olarak engeller.
+                      Arka plandaki gürültüleri, klavye seslerini ve yankıyı otomatik olarak engeller. Tıklayarak açıp kapatabilirsiniz.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                  <button
+                    type="button"
+                    disabled={isNoiseFilterPending}
+                    className={`relative inline-flex items-center h-6 w-11 rounded-full transition-colors ${
+                      isNoiseFilterEnabled ? "bg-[#5865f2]" : "bg-[#313338]"
+                    } ${isNoiseFilterPending ? "opacity-50" : ""}`}
+                  >
+                    <span
+                      className={`inline-block w-5 h-5 transform rounded-full bg-white transition-transform ${
+                        isNoiseFilterEnabled ? "translate-x-5" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <span
+                    className={`text-[10px] font-bold ${
+                      isNoiseFilterEnabled ? "text-[#23a55a]" : "text-[#f23f43]"
+                    }`}
+                  >
+                    {isNoiseFilterPending
+                      ? "..."
+                      : isNoiseFilterEnabled
+                      ? "AÇIK"
+                      : "KAPALI"}
+                  </span>
+                </div>
+              </div>
+
+              {/* 2. Ekran Paylaşımı Yayın Kalitesi Seçimi */}
+              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                  <Tv className="w-4 h-4 text-[#5865f2]" />
+                  <span>Ekran Paylaşımı Çözünürlük & FPS</span>
+                </div>
+                <p className="text-xs text-[#949ba4]">
+                  Ekran paylaşımı açıldığında gönderilecek hedef kalite seçeneği. (LiveKit Cloud 2K @ 60 FPS yayınları ücretsiz destekler).
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                  {(Object.keys(SCREEN_SHARE_PRESETS) as ScreenSharePresetKey[]).map((key) => {
+                    const preset = SCREEN_SHARE_PRESETS[key];
+                    const isSelected = screenQuality === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setScreenQuality(key)}
+                        className={`p-3 rounded-xl border text-left text-xs font-semibold transition-all cursor-pointer flex flex-col gap-1 ${
+                          isSelected
+                            ? "bg-[#5865f2]/20 border-[#5865f2] text-white shadow"
+                            : "bg-[#313338] border-[#404249] text-[#949ba4] hover:text-white hover:border-gray-500"
+                        }`}
+                      >
+                        <span>{preset.label}</span>
+                        <span className="text-[10px] opacity-75 font-mono">
+                          {(preset.maxBitrate / 1000000).toFixed(1)} Mbps Max Bitrate
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 3. Ekran Paylaşımı Ses Yakalama Opsiyonu */}
+              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-[#5865f2]/20 text-[#5865f2] mt-0.5">
+                    <Volume2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-sm font-bold text-white">Ekran Sesi Yayınlama</span>
+                    <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
+                      Ekran paylaşımı yapılırken tarayıcı sekmesi veya sistem seslerinin de izleyicilere iletilmesini sağlar.
                     </p>
                   </div>
                 </div>
@@ -622,34 +1080,14 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
                   <input
                     type="checkbox"
-                    checked={isNoiseFilterEnabled}
-                    disabled={isNoiseFilterPending}
-                    onChange={(e) => setNoiseFilterEnabled(e.target.checked)}
+                    checked={screenAudioEnabled}
+                    onChange={(e) => setScreenAudioEnabled(e.target.checked)}
                     className="sr-only peer"
                   />
-                  <div className="w-11 h-6 bg-[#313338] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#5865f2] peer-disabled:opacity-50"></div>
+                  <div className="w-11 h-6 bg-[#313338] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#5865f2]"></div>
                 </label>
               </div>
 
-              {/* Status Badge */}
-              <div className="flex items-center justify-between px-3 py-2 bg-[#1e1f22]/50 rounded-lg text-xs">
-                <span className="text-[#949ba4]">Filtre Durumu:</span>
-                <span
-                  className={`font-semibold ${
-                    isNoiseFilterPending
-                      ? "text-yellow-400"
-                      : isNoiseFilterEnabled
-                      ? "text-[#23a55a]"
-                      : "text-[#f23f43]"
-                  }`}
-                >
-                  {isNoiseFilterPending
-                    ? "Değiştiriliyor..."
-                    : isNoiseFilterEnabled
-                    ? "✓ Aktif (Gürültü Engelleniyor)"
-                    : "✗ Kapalı"}
-                </span>
-              </div>
             </div>
 
             {/* Modal Footer */}
@@ -757,11 +1195,6 @@ function RoomContainer() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-      }}
-      options={{
-        publishDefaults: {
-          audioPreset: AudioPresets.musicHighQuality,
-        },
       }}
       token={token}
       serverUrl={wsUrl}

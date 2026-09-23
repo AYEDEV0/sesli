@@ -1,4 +1,4 @@
-import { AccessToken } from "livekit-server-sdk";
+import { AccessToken, RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(request: NextRequest) {
@@ -23,6 +23,33 @@ export async function GET(request: NextRequest) {
         { error: "Sunucu konfigürasyonu eksik: LIVEKIT_API_KEY, LIVEKIT_API_SECRET veya NEXT_PUBLIC_LIVEKIT_URL tanımlanmamış." },
         { status: 500 }
       );
+    }
+
+    // Kilitli oda kontrolü
+    try {
+      const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
+      const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
+      const rooms = await roomService.listRooms([room]);
+
+      if (rooms && rooms.length > 0) {
+        const activeRoom = rooms[0];
+        if (activeRoom.metadata) {
+          const parsedMeta = JSON.parse(activeRoom.metadata);
+          if (parsedMeta.locked) {
+            // Kullanıcı zaten odada var mı kontrol edelim
+            const participants = await roomService.listParticipants(room);
+            const alreadyInRoom = participants.some((p) => p.identity === username);
+            if (!alreadyInRoom) {
+              return NextResponse.json(
+                { error: "🔒 Bu oda kilitlenmiştir! Odaya bağlı katılımcılar oda kilidini açana kadar yeni giriş yapılamaz." },
+                { status: 403 }
+              );
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Oda henüz oluşturulmamış veya kilit metadata kontrol hatası yok sayılır
     }
 
     // AccessToken üretimi (ttl: 24 saat)

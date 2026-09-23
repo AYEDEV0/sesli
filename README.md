@@ -1,6 +1,6 @@
 # 🎙️ Voxa - Yapay Zekâ Destekli Sesli Görüşme ve Ekran Paylaşım Platformu
 
-**Voxa**, Next.js 14, LiveKit ve Krisp AI altyapısı kullanılarak geliştirilmiş, tarayıcı üzerinden yüksek kaliteli sesli görüşme, kamera yayını, ekran paylaşımı ve anlık mesajlaşma sunan modern bir web uygulamasıdır.
+**Voxa**, Next.js 14, LiveKit ve Krisp AI altyapısı kullanılarak geliştirilmiş, tarayıcı üzerinden yüksek kaliteli sesli görüşme, kamera yayını, 2K ekran paylaşımı, oda kilitleme, kişi bazlı ses kontrolü ve anlık mesajlaşma sunan modern bir web uygulamasıdır.
 
 ---
 
@@ -8,7 +8,9 @@
 
 - **Hızlı ve Kolay Bağlantı:** Kullanıcıların herhangi bir kayıt/üyelik gereksinimi olmadan sadece kullanıcı adı ve oda ismi girerek anında sesli kanallara katılabilmesi.
 - **Yapay Zekâ Gürültü Engelleme (Krisp AI):** Görüşme esnasındaki arka plan gürültülerini, klavye seslerini, fan gürültüsünü ve yankıyı tarayıcı tarafında (WebAssembly) otomatik olarak filtreleme.
-- **Kesintisiz Ekran Paylaşımı & Kamera:** Yüksek çözünürlüklü ekran ve kamera yayını.
+- **2K 60 FPS Ekran Paylaşımı & Sistem Sesi:** 720p, 1080p ve 2K (1440p 60 FPS) çözünürlüğe kadar yüksek kaliteli ekran paylaşımı ve sekme/sistem sesi yayınlama.
+- **Kişiselleştirilmiş Ses Kontrolü:** Odadaki diğer kullanıcıların seslerini kişisel olarak bağımsız şekilde (%0 - %200) kısabilme, artırabilme veya kapatabilme.
+- **Güvenli Oda Kilitleme (Room Lock):** Odadaki katılımcıların isteğe bağlı olarak odayı kilitleyebilmesi ve kilitli odalara dışarıdan rastgele katılımı engelleme.
 - **Modern ve Koyu Tema (Discord Style UI):** Kullanıcı dostu, göz yormayan, dinamik ve estetik kullanıcı arayüzü.
 
 ---
@@ -28,20 +30,27 @@
 
 ## 🌟 Tamamlanan Özellikler ve Güncel Durum
 
-### 1. Ses & Filtre Özellikleri
-- **Varsayılan Krisp AI Filtresi:** Odaya girildiğinde ve mikrofon açıldığında AI Gürültü Filtresi **otomatik olarak AÇIK** olarak başlatılır.
-- **Ayarlar Menüsü:** Alt bar üzerindeki **Dişli (Gear / Settings)** ikonu ile açılan Ses Ayarları penceresi üzerinden Krisp filtresi istenildiği an kapatılabilir veya tekrar açılabilir.
-- **Görsel Durum Göstergesi:** Ayarlar butonunun üzerinde filtenin aktifliğini belirten canlı yeşil rozet ve durum yazısı.
+### 1. 🔊 Kullanıcı Bazlı Ses Kontrolü (Per-User Volume Control & Mute)
+- Katılımcı panelindeki her kullanıcı kartı altında yer alan **Ses Sürgüsü (%0 - %200)** ile her kişinin sesi bireysel olarak ayarlanabilir.
+- Tek tıkla herhangi bir uzak katılımcının sesini sessize alma (Mute) / sesini açma.
 
-### 2. Görüşme ve Medya Kontrolleri
-- **Mikrofon & Kamera Geçişi:** Tek tıkla kapatıp açabilme.
-- **Ekran Paylaşımı:** Tek tıkla ekran veya uygulama penceresi paylaşabilme.
-- **Tam Ekran Modu:** Seçilen ekran yayınını veya katılımcıyı tam ekranda izleme.
-- **Davet Bağlantısı Kopyalama:** Oda ismini ve katılımcı linkini panoya tek tıkla kopyalama.
+### 2. 🖥️ Ultra HD 2K 60 FPS Ekran Paylaşımı & Yayın Sesi
+- **Yayın Kalitesi Seçici (Quality Presets):**
+  - ⚡ **Performans Modu:** 720p @ 30 FPS (1.5 Mbps)
+  - 🎬 **Standart Mod:** 1080p @ 30 FPS (3.0 Mbps)
+  - 🚀 **Yüksek Hız Modu:** 1080p @ 60 FPS (4.5 Mbps)
+  - 🔥 **Ultra 2K Sinematik Mod:** 2K (1440p) @ 60 FPS (7.0 Mbps)
+- **Ekran Sesi Yayınlama:** Sekme ve sistem seslerini canlı yayına dahil edebilme.
+- **Ekran Sesi Kontrolü:** Ana sahne (Stage) üzerinde yayın sesini kısma/açma ve kapatabilme (%0 - %200).
 
-### 3. Kullanıcı Arayüzü ve Sohbet
-- **Varsayılan Kapalı Metin Sohbeti:** Sağ paneldeki sohbet ekranı odaya girildiğinde kapalı başlar, istendiğinde `Sohbet` butonuna basılarak açılır.
-- **Marka & Favicon:** Sade **Voxa** ismi ve özel olarak oluşturulmuş SVG tarayıcı ikonu (favicon).
+### 3. 🔒 Güvenli Oda Kilitleme (Room Lock)
+- Header üzerindeki **"Odayı Kilitle / Kilitli Oda"** butonu ile oda anında kilitlenebilir.
+- Oda kilitlendiğinde yeni katılan kullanıcılar için `/api/token` servisi `403 Forbidden` engeli uygular.
+- Tüm katılımcılar arasında oda kilit durumu gerçek zamanlı olarak senkronize edilir.
+
+### 4. 🎙️ Yapay Zekâ Gürültü Engelleme (Krisp AI)
+- Odaya girildiğinde ve mikrofon açıldığında AI Gürültü Filtresi **otomatik olarak AÇIK** olarak başlatılır.
+- **Ayarlar Menüsü:** Alt bar üzerindeki **Ayarlar (Gear/Sliders)** ikonu üzerinden Krisp filtresi ve yayın kalite tercihleri yönetilebilir.
 
 ---
 
@@ -53,10 +62,13 @@ ses/
 ├── src/
 │   ├── app/
 │   │   ├── [roomName]/
-│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit & Krisp AI kontrolü
+│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit, 2K Yayın, Ses Kontrolü
 │   │   ├── api/
+│   │   │   ├── room/
+│   │   │   │   └── lock/
+│   │   │   │       └── route.ts# Oda kilit durumunu güncelleyen API endpoint'i
 │   │   │   └── token/
-│   │   │       └── route.ts    # LiveKit JWT Token üreten sunucu endpoint'i
+│   │   │       └── route.ts    # LiveKit JWT Token üreten & Oda kilit kontrolü yapan endpoint
 │   │   ├── globals.css         # Global stiller ve Tailwind importları
 │   │   ├── icon.svg            # Özel Voxa Favicon ikonu
 │   │   ├── layout.tsx          # Root layout ve Voxa metadata başlığı
@@ -98,13 +110,3 @@ Uygulamaya tarayıcıdan `http://localhost:3000` adresinden erişebilirsiniz.
 ```bash
 npm run build
 ```
-
----
-
-## 🔮 Gelecek Geliştirme Önerileri (Roadmap)
-
-İleride projeye eklenebilecek olası geliştirmeler:
-1. **Bireysel Ses Düzeyi Sürgüsü:** Katılımcı listesinde her kullanıcının sesini ayrı ayrı artırıp azaltabilme.
-2. **Bas-Konuş (Push-to-Talk):** Belirli bir tuşa basılı tutulduğunda mikrofonun açılması.
-3. **Kullanıcı Avatarları:** Giriş ekranında profil resmi/avatar seçme opsiyonu.
-4. **Ses Seviyesi Göstergesi (Audio Indicator):** Konuşan kişinin etrafında yeşil harelenme efekti.
