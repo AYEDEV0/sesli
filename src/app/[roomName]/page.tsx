@@ -1304,7 +1304,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">Voxa Masaüstü Uygulaması</span>
                       <span className="bg-[#23a55a]/20 text-[#23a55a] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#23a55a]/30">
-                        v1.0.0 (Son Sürüm)
+                        v1.0.1 (Son Sürüm)
                       </span>
                     </div>
                     <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
