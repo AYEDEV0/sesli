@@ -1,6 +1,6 @@
 # 🎙️ Voxa - Yapay Zekâ Destekli Sesli Görüşme ve Ekran Paylaşım Platformu
 
-**Voxa**, Next.js 14, LiveKit ve Krisp AI altyapısı kullanılarak geliştirilmiş, tarayıcı üzerinden yüksek kaliteli sesli görüşme, kamera yayını, 2K ekran paylaşımı, oda kilitleme, kişi bazlı ses kontrolü ve anlık mesajlaşma sunan modern bir web uygulamasıdır.
+**Voxa**, Next.js 14, LiveKit, Krisp AI ve Electron altyapısı kullanılarak geliştirilmiş, tarayıcı ve masaüstü uygulaması üzerinden yüksek kaliteli sesli görüşme, kamera yayını, 2K ekran paylaşımı, oda kilitleme, kişi bazlı ses kontrolü ve anlık mesajlaşma sunan modern bir hibrit platformdur.
 
 ---
 
@@ -9,6 +9,7 @@
 - **Hızlı ve Kolay Bağlantı:** Kullanıcıların herhangi bir kayıt/üyelik gereksinimi olmadan sadece kullanıcı adı ve oda ismi girerek anında sesli kanallara katılabilmesi.
 - **Yapay Zekâ Gürültü Engelleme (Krisp AI):** Görüşme esnasındaki arka plan gürültülerini, klavye seslerini, fan gürültüsünü ve yankıyı tarayıcı tarafında (WebAssembly) otomatik olarak filtreleme.
 - **2K 60 FPS Ekran Paylaşımı & Sistem Sesi:** 720p, 1080p ve 2K (1440p 60 FPS) çözünürlüğe kadar yüksek kaliteli ekran paylaşımı ve sekme/sistem sesi yayınlama.
+- **Discord Tarzı Masaüstü Uygulaması (Electron):** Hem Web tarayıcısından hem de bilgisayara kurulan masaüstü uygulaması (`.exe`) üzerinden engelsiz ekran ve oyun içi ses paylaşımı yapabilme.
 - **Kişiselleştirilmiş Ses Kontrolü:** Odadaki diğer kullanıcıların seslerini kişisel olarak bağımsız şekilde (%0 - %200) kısabilme, artırabilme veya kapatabilme.
 - **Güvenli Oda Kilitleme (Room Lock):** Odadaki katılımcıların isteğe bağlı olarak odayı kilitleyebilmesi ve kilitli odalara dışarıdan rastgele katılımı engelleme.
 - **Modern ve Koyu Tema (Discord Style UI):** Kullanıcı dostu, göz yormayan, dinamik ve estetik kullanıcı arayüzü.
@@ -20,7 +21,8 @@
 | Bileşen | Teknolojiler |
 | :--- | :--- |
 | **Framework** | Next.js 14 (App Router), React 18 |
-| **Programlama Dili** | TypeScript |
+| **Masaüstü Altyapısı** | Electron 44, Electron Builder |
+| **Programlama Dili** | TypeScript, JavaScript (ES6+) |
 | **Stil & Tasarım** | Tailwind CSS, Lucide Icons, Custom CSS |
 | **Canlı Medya Altyapısı**| LiveKit Web SDK (`@livekit/components-react`, `livekit-client`, `livekit-server-sdk`) |
 | **Gürültü Filtresi** | `@livekit/krisp-noise-filter` (Krisp WebAssembly AI Noise Suppression) |
@@ -52,6 +54,15 @@
 - Odaya girildiğinde ve mikrofon açıldığında AI Gürültü Filtresi **otomatik olarak AÇIK** olarak başlatılır.
 - **Ayarlar Menüsü:** Alt bar üzerindeki **Ayarlar (Gear/Sliders)** ikonu üzerinden Krisp filtresi ve yayın kalite tercihleri yönetilebilir.
 
+### 5. 💻 Masaüstü Uygulaması & Doğrudan İndirme (Electron & Web Hybrid)
+- Ana sayfa ve ayarlar menüsünde yer alan **"Masaüstü Uygulamasını İndir (.exe)"** butonu ile doğrudan güncel sürüm indirilebilir.
+- Masaüstü uygulaması açıldığında ortamı otomatik algılar ve güncellik durumunu ayarlar menüsünde bildirir.
+- Üretim modunda otomatik olarak canlı Netlify sunucusuna (`https://ekkran.netlify.app`) bağlanır.
+
+### 6. 💬 Sohbet Mesajı Seçme ve Kopyalama
+- Oda içi sohbet paneli metin seçilebilir (`select-text`) hale getirilmiştir.
+- Kullanıcılar mesajları fare ile seçebilir, doğrudan kopyalayabilir veya tarayıcıda aratabilir.
+
 ---
 
 ## 🗺️ Proje Bağlantı Mantığı ve Düzeltme Yol Haritası
@@ -66,7 +77,9 @@
 - [x] **Ekran Paylaşımı Ses Düzeltmesi:** Ekran paylaşımında ses verme seçeneği seçildiğinde paylaşımın başlamama sorunu düzeltildi. Tarayıcı/pencere bazlı ses desteksizliği durumunda ekran paylaşımının düşmemesi için esnek fallback mekanizması eklendi.
 - [x] **Ayarlar Menüsü Metin Temizliği:** Ayarlar modalı içerisinde yer alan gereksiz açıklama metni (`LiveKit Cloud 2K @ 60 FPS...`) kaldırıldı.
 - [x] **Giriş Yükleme Ekranı Sadeleştirmesi:** Odaya katılırken ekranda beliren "LiveKit token alınıyor..." teknik bilgisi kaldırıldı, kullanıcıya sade "Odaya Bağlanılıyor..." bilgisi sağlandı.
-- [x] **Electron Masaüstü Uygulaması & Web'den İndirme:** Web sitesi ana sayfası ve oda ayarlar modalına "Voxa Masaüstü Uygulamasını İndir (v1.0.0)" butonu ve `/api/download/desktop` endpoint'i entegre edildi. Masaüstü uygulamasında açıldığında otomatik algılama ve güncellik bilgisi sağlandı.
+- [x] **Electron Masaüstü Uygulaması & Web'den İndirme:** Web sitesi ana sayfası ve oda ayarlar modalına "Voxa Masaüstü Uygulamasını İndir (v1.0.0)" butonu ve `/api/download/desktop` endpoint'i entegre edildi.
+- [x] **Electron Siyah Ekran & Yayın İzinleri Düzeltmesi:** Masaüstü uygulaması açıldığında canlı Netlify URL'ine otomatik bağlanacak şekilde ayarlandı (`electron/main.js`). `setDisplayMediaRequestHandler` ile ekran ve ses yayın izinleri açıldı.
+- [x] **Sohbet Mesajı Seçme & Kopyalama:** Sohbet panelindeki tüm metinler seçilebilir ve kopyalanabilir hale getirildi.
 
 ---
 
@@ -76,12 +89,13 @@
 ```bash
 npm run electron:dev
 ```
+*Bu komut hem Next.js sunucusunu hem de Electron masaüstü penceresini aynı anda başlatır.*
 
 ### 2. Windows Installer (.exe) Paketlemesi Üretme
 ```bash
 npm run electron:build
 ```
-Üretilen kurulum dosyası `dist/` klasörü altına kaydedilecektir.
+Üretilen kurulum dosyası `dist/` klasörü altına kaydedilecektir (`Voxa Desktop Setup 1.0.0.exe`).
 
 ---
 
@@ -89,24 +103,31 @@ npm run electron:build
 
 ```
 ses/
+├── electron/
+│   ├── main.js                 # Electron ana süreci, pencere yönetimi & medya izinleri
+│   └── preload.js              # IPC ve webContext izolasyon scripti
 ├── public/
+│   ├── downloads/              # İndirilebilir medya ve uygulama konumları
+│   └── icon.svg                # Özel Voxa Favicon ikonu
 ├── src/
 │   ├── app/
 │   │   ├── [roomName]/
-│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit, 2K Yayın, Ses Kontrolü
+│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit, 2K Yayın, Ses Kontrolü, Sohbet
 │   │   ├── api/
+│   │   │   ├── download/
+│   │   │   │   └── desktop/
+│   │   │   │       └── route.ts# Masaüstü .exe indirme yönlendirme endpoint'i
 │   │   │   ├── room/
 │   │   │   │   └── lock/
 │   │   │   │       └── route.ts# Oda kilit durumunu güncelleyen API endpoint'i
 │   │   │   └── token/
 │   │   │       └── route.ts    # LiveKit JWT Token üreten & Oda kilit kontrolü yapan endpoint
 │   │   ├── globals.css         # Global stiller ve Tailwind importları
-│   │   ├── icon.svg            # Özel Voxa Favicon ikonu
 │   │   ├── layout.tsx          # Root layout ve Voxa metadata başlığı
-│   │   └── page.tsx            # Ana sayfa odaya katılma/oluşturma formu
-├── .env.local                  # LiveKit API Key & Secret ortam değişkenleri
+│   │   └── page.tsx            # Ana sayfa odaya katılma/oluşturma ve indirme alanı
+├── .env.local                  # LiveKit API Key & Secret & Download URL ortam değişkenleri
 ├── netlify.toml                # Netlify deployment konfigürasyonu
-├── package.json                # Proje bağımlılıkları ve npm komutları
+├── package.json                # Proje bağımlılıkları, Electron ve npm komutları
 └── README.md                   # Proje dokümantasyonu (Bu dosya)
 ```
 
@@ -114,12 +135,13 @@ ses/
 
 ## ⚙️ Ortam Değişkenleri (.env.local)
 
-Projenin çalışması için kök dizinde `.env.local` dosyasının aşağıdaki anahtarları içermesi gerekir:
+Projenin çalışması için `.env.local` dosyasının veya Netlify panelinin aşağıdaki anahtarları içermesi gerekir:
 
 ```env
 LIVEKIT_API_KEY=your_livekit_api_key_here
 LIVEKIT_API_SECRET=your_livekit_api_secret_here
 NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-project.livekit.cloud
+DESKTOP_DOWNLOAD_URL=https://github.com/AYEDEV0/indirme/releases/download/v1Ses/Voxa.Desktop.Setup.1.0.0.exe
 ```
 
 ---
@@ -131,7 +153,7 @@ NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-project.livekit.cloud
 npm install
 ```
 
-### 2. Geliştirme Sunucusunu Başlatma
+### 2. Geliştirme Sunucusunu Başlatma (Web)
 ```bash
 npm run dev
 ```
@@ -141,4 +163,3 @@ Uygulamaya tarayıcıdan `http://localhost:3000` adresinden erişebilirsiniz.
 ```bash
 npm run build
 ```
-
