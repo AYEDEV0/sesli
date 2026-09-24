@@ -63,7 +63,7 @@ function createWindow() {
   // Geliştirme modunda (npm run electron:dev) -> http://localhost:3000
   // Üretim modunda (.exe çalıştırıldığında) -> Canlı Netlify web uygulaması adresi
   const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
-  const defaultLiveUrl = process.env.LIVE_APP_URL || "https://ekkran.netlify.app";
+  const defaultLiveUrl = process.env.LIVE_APP_URL || "https://ses.app.noticq.com";
   const startUrl = process.env.ELECTRON_START_URL || (isDev ? "http://localhost:3000" : defaultLiveUrl);
 
   mainWindow.loadURL(startUrl);

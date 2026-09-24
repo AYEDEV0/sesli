@@ -377,15 +377,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Copy Invite Link to Clipboard
   const handleCopyInvite = useCallback(() => {
     if (typeof window === "undefined") return;
-    const defaultDomain = process.env.NEXT_PUBLIC_APP_URL || "https://ses.app.noticq.com";
-    const origin =
-      window.location.origin &&
-      window.location.origin !== "null" &&
-      !window.location.origin.startsWith("file:") &&
-      !window.location.origin.includes("localhost")
-        ? window.location.origin
-        : defaultDomain;
-    const inviteUrl = `${origin}?room=${encodeURIComponent(roomName)}`;
+    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || "https://ses.app.noticq.com";
+    const inviteUrl = `${baseDomain}?room=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
