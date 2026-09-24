@@ -9,7 +9,7 @@
     "start": "next start",
     "lint": "next lint",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-builder",
+    "electron:build": "next build && electron-builder --publish never",
     "electron:publish": "next build && electron-builder --publish never"
   },
   "build": {
