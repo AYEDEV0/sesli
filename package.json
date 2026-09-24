@@ -18,7 +18,8 @@
     "publish": {
       "provider": "github",
       "owner": "AYEDEV0",
-      "repo": "sesli"
+      "repo": "sesli",
+      "releaseType": "release"
     },
     "asar": true,
     "directories": {
