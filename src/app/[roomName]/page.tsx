@@ -1151,7 +1151,6 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 {!isElectronApp && (
                   <a
                     href="/api/download/desktop"
-                    download
                     className="px-4 py-2 bg-[#5865f2] hover:bg-[#4752c4] active:scale-95 text-white text-xs font-bold rounded-xl transition-all shadow flex items-center gap-2 flex-shrink-0 cursor-pointer"
                   >
                     <Download className="w-4 h-4" />

@@ -132,7 +132,6 @@ function JoinForm() {
           <div className="mt-6 pt-5 border-t border-[#2b2d31]">
             <a
               href="/api/download/desktop"
-              download
               className="w-full py-3 px-4 bg-[#1e1f22] hover:bg-[#2b2d31] border border-[#313338] hover:border-[#5865f2]/50 text-xs font-semibold text-[#949ba4] hover:text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm group"
             >
               <Laptop className="w-4 h-4 text-[#5865f2]" />
