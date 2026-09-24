@@ -30,8 +30,26 @@ jobs:
       - name: Install Dependencies
         run: npm ci
 
-      - name: Build & Publish Electron App
+      - name: Build Next.js & Electron App
+        run: npm run electron:build
+
+      - name: Get App Version
+        id: package-version
+        shell: powershell
+        run: |
+          $ver = (Get-Content package.json | ConvertFrom-Json).version
+          echo "version=$ver" >> $env:GITHUB_OUTPUT
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.package-version.outputs.version }}
+          name: Voxa Desktop v${{ steps.package-version.outputs.version }}
+          files: |
+            dist/*.exe
+            dist/latest.yml
+          draft: false
+          prerelease: false
+          make_latest: true
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run electron:publish
