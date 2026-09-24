@@ -51,9 +51,25 @@ function createWindow() {
       });
   });
 
-  // Geliştirme modunda localhost, prodüksiyonda yerel veya yayınlanan URL
-  const startUrl = process.env.ELECTRON_START_URL || "http://localhost:3000";
+  // Geliştirme modunda (npm run electron:dev) -> http://localhost:3000
+  // Üretim modunda (.exe çalıştırıldığında) -> Canlı Netlify web uygulaması adresi
+  const isDev = !app.isPackaged && process.env.NODE_ENV !== "production";
+  const defaultLiveUrl = process.env.LIVE_APP_URL || "https://ekkran.netlify.app";
+  const startUrl = process.env.ELECTRON_START_URL || (isDev ? "http://localhost:3000" : defaultLiveUrl);
+
   mainWindow.loadURL(startUrl);
+
+  // Yükleme hatası durumunda (örneğin internet kopukluğunda) canlı adrese düşme / yeniden deneme
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription) => {
+    console.warn("Sayfa yükleme başarısız oldu, yeniden deneniyor...", errorDescription);
+    if (startUrl !== defaultLiveUrl) {
+      mainWindow.loadURL(defaultLiveUrl);
+    } else {
+      setTimeout(() => {
+        if (mainWindow) mainWindow.loadURL(startUrl);
+      }, 3000);
+    }
+  });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
