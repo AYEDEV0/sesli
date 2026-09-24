@@ -36,4 +36,4 @@ jobs:
       - name: Publish Electron App to GitHub Releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npx electron-builder --publish always
+        run: npx electron-builder --publish always -c.publish.releaseType=release
