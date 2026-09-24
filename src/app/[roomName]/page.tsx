@@ -121,6 +121,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
   const [userMutedState, setUserMutedState] = useState<Record<string, boolean>>({});
   const [isDeafened, setIsDeafened] = useState<boolean>(false);
+  const [lastReadChatCount, setLastReadChatCount] = useState<number>(0);
 
   // Masaüstü (Electron) Ekran Seçim Modalı
   const [desktopPickerOpen, setDesktopPickerOpen] = useState<boolean>(false);
@@ -212,10 +213,15 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
-  // Auto scroll chat to bottom
+  // Auto scroll chat to bottom & reset unread count when chat is open
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (chatOpen) {
+      setLastReadChatCount(chatMessages.length);
+    }
   }, [chatMessages, chatOpen]);
+
+  const unreadChatCount = chatOpen ? 0 : Math.max(0, chatMessages.length - lastReadChatCount);
 
   // Fullscreen Listener
   useEffect(() => {
@@ -379,7 +385,24 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     if (typeof window === "undefined") return;
     const baseDomain = process.env.NEXT_PUBLIC_APP_URL || "https://ses.app.noticq.com";
     const inviteUrl = `${baseDomain}?room=${encodeURIComponent(roomName)}`;
-    navigator.clipboard.writeText(inviteUrl);
+
+    try {
+      if ((window as any).electronAPI?.clipboardWriteText) {
+        (window as any).electronAPI.clipboardWriteText(inviteUrl);
+      } else if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(inviteUrl);
+      } else {
+        const input = document.createElement("input");
+        input.value = inviteUrl;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+    } catch (e) {
+      console.warn("Clipboard hatası:", e);
+    }
+
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   }, [roomName]);
@@ -619,9 +642,9 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
           >
             <MessageSquare className="w-4 h-4" />
             <span className="hidden sm:inline">Sohbet</span>
-            {chatMessages.length > 0 && (
-              <span className="bg-[#f23f43] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full">
-                {chatMessages.length}
+            {unreadChatCount > 0 && (
+              <span className="bg-[#f23f43] text-white text-[10px] font-extrabold px-1.5 py-0.5 rounded-full animate-pulse">
+                {unreadChatCount}
               </span>
             )}
           </button>
@@ -1304,7 +1327,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">Voxa Masaüstü Uygulaması</span>
                       <span className="bg-[#23a55a]/20 text-[#23a55a] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#23a55a]/30">
-                        v1.0.1 (Son Sürüm)
+                        v1.0.2 (Son Sürüm)
                       </span>
                     </div>
                     <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">

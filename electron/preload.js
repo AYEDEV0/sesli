@@ -6,4 +6,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   toggleFullscreen: () => ipcRenderer.invoke("toggle-fullscreen"),
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
+  clipboardWriteText: (text) => ipcRenderer.invoke("clipboard-write-text", text),
 });

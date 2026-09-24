@@ -1,4 +1,13 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, session, shell, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, desktopCapturer, session, shell, dialog, clipboard } = require("electron");
+
+// IPC Handler: Panoya Metin Yazma (Davet Linkleri vb.)
+ipcMain.handle("clipboard-write-text", async (event, text) => {
+  if (typeof text === "string") {
+    clipboard.writeText(text);
+    return true;
+  }
+  return false;
+});
 const path = require("path");
 const { autoUpdater } = require("electron-updater");
 
