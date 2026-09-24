@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\"",
-    "electron:build": "next build && electron-builder"
+    "electron:build": "next build && electron-builder",
+    "electron:publish": "next build && electron-builder --publish always"
   },
   "build": {
     "appId": "com.voxa.app",
@@ -17,7 +18,7 @@
     "publish": {
       "provider": "github",
       "owner": "AYEDEV0",
-      "repo": "indirme"
+      "repo": "sesli"
     },
     "asar": true,
     "directories": {
