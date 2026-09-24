@@ -1,9 +1,11 @@
-const { app, BrowserWindow, ipcMain, desktopCapturer, session } = require("electron");
+const { app, BrowserWindow, ipcMain, desktopCapturer, session, shell, dialog } = require("electron");
 const path = require("path");
+const { autoUpdater } = require("electron-updater");
 
 // Ekran ve Ses Yakalama için Chromium Flag'leri
 app.commandLine.appendSwitch("enable-usermedia-screen-capturing");
 app.commandLine.appendSwitch("allow-http-screen-capture");
+app.commandLine.appendSwitch("enable-audio-service-sandbox", "false");
 
 let mainWindow;
 
@@ -40,7 +42,14 @@ function createWindow() {
       .getSources({ types: ["screen", "window"] })
       .then((sources) => {
         if (sources.length > 0) {
-          callback({ video: sources[0], audio: "loopback" });
+          // Windows'ta sistem ses aktarımı (loopback) "screen" türündeki kaynaklarda çalışır.
+          const screenSource = sources.find((s) => s.id.startsWith("screen:")) || sources[0];
+          const isScreenSource = screenSource.id.startsWith("screen:");
+          
+          callback({
+            video: screenSource,
+            audio: isScreenSource ? "loopback" : undefined,
+          });
         } else {
           callback(null);
         }
@@ -76,6 +85,38 @@ function createWindow() {
   });
 }
 
+// Auto-Updater Konfigürasyonu
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.autoDownload = true;
+
+  autoUpdater.on("update-available", () => {
+    if (mainWindow) {
+      mainWindow.webContents.send("update-available");
+    }
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "Voxa Güncellemesi Hazır",
+        message: "Voxa'nın yeni bir sürümü indirildi. Yeniden başlatarak güncelleyebilirsiniz.",
+        buttons: ["Şimdi Yeniden Başlat", "Sonra"],
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+  });
+
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.warn("Otomatik güncelleme kontrol hatası:", err);
+  });
+}
+
 // IPC Handler: Masaüstü Ekran & Pencere Kaynaklarını Getirme
 ipcMain.handle("get-desktop-sources", async () => {
   try {
@@ -94,7 +135,40 @@ ipcMain.handle("get-desktop-sources", async () => {
   }
 });
 
-app.whenReady().then(createWindow);
+// IPC Handler: Tam Ekran Modu Geçişi
+ipcMain.handle("toggle-fullscreen", async () => {
+  if (!mainWindow) return false;
+  const isFull = mainWindow.isFullScreen();
+  mainWindow.setFullScreen(!isFull);
+  return !isFull;
+});
+
+// IPC Handler: Harici Bağlantı Açma
+ipcMain.handle("open-external", async (event, url) => {
+  if (url && typeof url === "string") {
+    shell.openExternal(url);
+    return true;
+  }
+  return false;
+});
+
+// IPC Handler: Güncelleme Kontrolü
+ipcMain.handle("check-for-updates", async () => {
+  if (app.isPackaged) {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      return !!result;
+    } catch (e) {
+      return false;
+    }
+  }
+  return false;
+});
+
+app.whenReady().then(() => {
+  createWindow();
+  setupAutoUpdater();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

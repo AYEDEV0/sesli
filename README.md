@@ -18,25 +18,27 @@
 
 ## 🛠️ Kullanılan Teknolojiler
 
-| Bileşen | Teknolojiler |
-| :--- | :--- |
-| **Framework** | Next.js 14 (App Router), React 18 |
-| **Masaüstü Altyapısı** | Electron 44, Electron Builder |
-| **Programlama Dili** | TypeScript, JavaScript (ES6+) |
-| **Stil & Tasarım** | Tailwind CSS, Lucide Icons, Custom CSS |
-| **Canlı Medya Altyapısı**| LiveKit Web SDK (`@livekit/components-react`, `livekit-client`, `livekit-server-sdk`) |
-| **Gürültü Filtresi** | `@livekit/krisp-noise-filter` (Krisp WebAssembly AI Noise Suppression) |
-| **Dağıtım (Deployment)** | Netlify (GitHub CI/CD otomatik yayına alma) |
+| Bileşen                   | Teknolojiler                                                                          |
+| :------------------------ | :------------------------------------------------------------------------------------ |
+| **Framework**             | Next.js 14 (App Router), React 18                                                     |
+| **Masaüstü Altyapısı**    | Electron 44, Electron Builder                                                         |
+| **Programlama Dili**      | TypeScript, JavaScript (ES6+)                                                         |
+| **Stil & Tasarım**        | Tailwind CSS, Lucide Icons, Custom CSS                                                |
+| **Canlı Medya Altyapısı** | LiveKit Web SDK (`@livekit/components-react`, `livekit-client`, `livekit-server-sdk`) |
+| **Gürültü Filtresi**      | `@livekit/krisp-noise-filter` (Krisp WebAssembly AI Noise Suppression)                |
+| **Dağıtım (Deployment)**  | Netlify (GitHub CI/CD otomatik yayına alma)                                           |
 
 ---
 
 ## 🌟 Tamamlanan Özellikler ve Güncel Durum
 
 ### 1. 🔊 Kullanıcı Bazlı Ses Kontrolü (Per-User Volume Control & Mute)
+
 - Katılımcı panelindeki her kullanıcı kartı altında yer alan **Ses Sürgüsü (%0 - %200)** ile her kişinin sesi bireysel olarak ayarlanabilir.
 - Tek tıkla herhangi bir uzak katılımcının sesini sessize alma (Mute) / sesini açma.
 
 ### 2. 🖥️ Ultra HD 2K 60 FPS Ekran Paylaşımı & Yayın Sesi
+
 - **Yayın Kalitesi Seçici (Quality Presets):**
   - ⚡ **Performans Modu:** 720p @ 30 FPS (1.5 Mbps)
   - 🎬 **Standart Mod:** 1080p @ 30 FPS (3.0 Mbps)
@@ -46,55 +48,96 @@
 - **Ekran Sesi Kontrolü:** Ana sahne (Stage) üzerinde yayın sesini kısma/açma ve kapatabilme (%0 - %200).
 
 ### 3. 🔒 Güvenli Oda Kilitleme (Room Lock)
+
 - Header üzerindeki **"Odayı Kilitle / Kilitli Oda"** butonu ile oda anında kilitlenebilir.
 - Oda kilitlendiğinde yeni katılan kullanıcılar için `/api/token` servisi `403 Forbidden` engeli uygular.
 - Tüm katılımcılar arasında oda kilit durumu gerçek zamanlı olarak senkronize edilir.
 
 ### 4. 🎙️ Yapay Zekâ Gürültü Engelleme (Krisp AI)
+
 - Odaya girildiğinde ve mikrofon açıldığında AI Gürültü Filtresi **otomatik olarak AÇIK** olarak başlatılır.
 - **Ayarlar Menüsü:** Alt bar üzerindeki **Ayarlar (Gear/Sliders)** ikonu üzerinden Krisp filtresi ve yayın kalite tercihleri yönetilebilir.
 
 ### 5. 💻 Masaüstü Uygulaması & Doğrudan İndirme (Electron & Web Hybrid)
+
 - Ana sayfa ve ayarlar menüsünde yer alan **"Masaüstü Uygulamasını İndir (.exe)"** butonu ile doğrudan güncel sürüm indirilebilir.
 - Masaüstü uygulaması açıldığında ortamı otomatik algılar ve güncellik durumunu ayarlar menüsünde bildirir.
 - Üretim modunda otomatik olarak canlı Netlify sunucusuna (`https://ekkran.netlify.app`) bağlanır.
 
 ### 6. 💬 Sohbet Mesajı Seçme ve Kopyalama
+
 - Oda içi sohbet paneli metin seçilebilir (`select-text`) hale getirilmiştir.
 - Kullanıcılar mesajları fare ile seçebilir, doğrudan kopyalayabilir veya tarayıcıda aratabilir.
+
+---
+
+## 🔮 Gelecek Sürümlerde Eklenecek Özellikler (Planlanan Yol Haritası)
+
+### 1. 🖥️ Masaüstü Ekran Paylaşımı Seçim Modalı (Desktop Screen/Window & Sound Picker)
+
+- **Kaynak Seçim Menüsü:** Masaüstü uygulamasında ekran paylaşımı butonuna basıldığında doğrudan tüm ekranı vermek yerine Discord benzeri bir seçim penceresi (Modal) açılacaktır.
+- **Ekran vs Pencere Seçimi:** Kullanıcıya _"Tüm Ekran (Entire Screen)"_ mi yoksa _"Spesifik Uygulama / Oyun Penceresi (Application Window)"_ mi yayınlamak istediği sorulacaktır.
+- **Sesli / Sessiz Yayın Tercihi:** Yayın başlatılmadan önce ekran sesinin de aktarılıp aktarılmayacağı _"Sesli / Sessiz"_ olarak kullanıcıya sorulacaktır.
+
+  ** masaüstü uygulamada tam ekran çalışmıyor
+  ** masaüstü uygulamada link paylaşma davet çalışmıyor
+
+### 2. 🎧 Gelişmiş Ses ve Aygıt Yönetimi (Audio & Device Settings)
+
+- **Giriş ve Çıkış Aygıtı Seçimi (Media Device Selectors):**
+  - Kullanıcının kullanmak istediği **Mikrofon Aygıtını (Input Device)** Ayarlar menüsünden değiştirebilmesi.
+  - Sesteki çıkışın verileceği **Hoparlör / Kulaklık Aygıtını (Output Device)** dinamik seçebilmesi.
+- **Kendi Ses Seviyesi ve Yan Ton (Mic Gain & Side Tone / Test):**
+  - Kullanıcının kendi mikrofon kazancını (Input Volume) ayarlayabilmesi.
+  - Mikrofon test alanı ve kendi sesini kulaklığa geri alma (Mic Feedback / Side Tone) kontrolü.
+
+### 💡 Antigravity AI Tarafından Önerilen Ek Özellikler
+
+- 🔇 **Sağırlaştırma (Deafen) Butonu:** Tek tıkla hem mikrofonu hem de odadaki tüm diğer katılımcıların sesini anında kapatabilme (Discord Deafen tarzı).
+- 🎙️ **Bas-Konuş (Push-to-Talk) & Kısayol Tuşları (Keybindings):** Bas-konuş modu ve sistem genelinde çalışan global kısayol tuşları (Mute/Deafen toggle).
+- 🖼️ **Yüzen Yayın Penceresi (Picture-in-Picture / Floating Window):** Başka işlerle uğraşırken arkadaşınızın yayınını ekranın bir köşesinde küçük yüzen pencerede izleme.
+- 📊 **Anlık Ağ ve Yayın İstatistikleri (Ping, FPS, Bitrate Panel):** Bağlantı gecikmesini (Ping ms), yayın çözünürlüğünü, FPS değerini ve anlık bant genişliğini gösteren istatistik paneli.
+- 🔄 **Masaüstü Otomatik Güncelleme (Electron Auto-Updater):** Masaüstü uygulamasının yeni sürümlerini açılışta otomatik denetleyip arka planda güncelleyen altyapı.
 
 ---
 
 ## 🗺️ Proje Bağlantı Mantığı ve Düzeltme Yol Haritası
 
 ### 🔗 Bağlantı & Çalışma Mantığı
+
 1. **Giriş ve Yönlendirme (`/`):** Kullanıcı adı ve oda adı alınıp URL parametreleriyle `/[roomName]?username=...` rotasına yönlendirilir.
 2. **Token Oluşturma (`/api/token`):** Oda yüklenirken sunucu tarafında LiveKit API Key ve Secret kullanılarak güvenli JWT Token üretilir. Oda kilitli ise `403 Forbidden` ile katılım engellenir.
 3. **Canlı Odaya Bağlantı (`LiveKitRoom`):** Token ile LiveKit WebSocket sunucusuna bağlanılır. Sesli iletişim, video, ekran paylaşımı ve sohbet kanalları aktif edilir.
 4. **Ekran & Ses Akışı:** WebRTC `getDisplayMedia` protokolü üzerinden 2K 60 FPS'e kadar görüntü ve sistem/sekme sesi yayınlanır.
 
 ### 🛠️ Yapılan Düzeltmeler Yol Haritası
-- [x] **Ekran Paylaşımı Ses Düzeltmesi:** Ekran paylaşımında ses verme seçeneği seçildiğinde paylaşımın başlamama sorunu düzeltildi. Tarayıcı/pencere bazlı ses desteksizliği durumunda ekran paylaşımının düşmemesi için esnek fallback mekanizması eklendi.
-- [x] **Ayarlar Menüsü Metin Temizliği:** Ayarlar modalı içerisinde yer alan gereksiz açıklama metni (`LiveKit Cloud 2K @ 60 FPS...`) kaldırıldı.
-- [x] **Giriş Yükleme Ekranı Sadeleştirmesi:** Odaya katılırken ekranda beliren "LiveKit token alınıyor..." teknik bilgisi kaldırıldı, kullanıcıya sade "Odaya Bağlanılıyor..." bilgisi sağlandı.
-- [x] **Electron Masaüstü Uygulaması & Web'den İndirme:** Web sitesi ana sayfası ve oda ayarlar modalına "Voxa Masaüstü Uygulamasını İndir (v1.0.0)" butonu ve `/api/download/desktop` endpoint'i entegre edildi.
-- [x] **Electron Siyah Ekran & Yayın İzinleri Düzeltmesi:** Masaüstü uygulaması açıldığında canlı Netlify URL'ine otomatik bağlanacak şekilde ayarlandı (`electron/main.js`). `setDisplayMediaRequestHandler` ile ekran ve ses yayın izinleri açıldı.
-- [x] **Sohbet Mesajı Seçme & Kopyalama:** Sohbet panelindeki tüm metinler seçilebilir ve kopyalanabilir hale getirildi.
+
+- [x] **Masaüstü & Web Ekran Paylaşımı Ses Aktarımı Düzeltmesi:** Masaüstü uygulamasında ekran paylaşımı yaparken sistem sesi (loopback) aktarma sorunu ve WebRTC yayın ses kanalı bağlama hataları giderildi (`electron/main.js`).
+- [x] **Masaüstü Ekran & Pencere Seçim Modalı (Desktop Source Picker):** Masaüstü uygulamasında ekran paylaşımına basıldığında tüm aktif pencerelerin ve ekranların önizlemeli görsel listesini sunan seçim penceresi entegre edildi.
+- [x] **Aygıt Yönetimi (Mikrofon ve Hoparlör Seçicileri):** Ayarlar menüsüne kullanıcının mikrofonunu (Input Device) ve kulaklığını/hoparlörünü (Output Device) dinamik olarak değiştirebileceği seçiciler eklendi (`useMediaDeviceSelect`).
+- [x] **Sağırlaştırma (Deafen) Butonu:** Discord tarzı tek tıkla hem mikrofonu kapatan hem de gelen tüm oda seslerini tamamen sessize alan buton eklendi (Kısayol: `D`).
+- [x] **Kısayol Tuşları (Keybindings):** Mikrofon açma/kapatma (`M`), Sağırlaştırma (`D`) ve Tam Ekran (`F`) klavye kısayolları eklendi.
+- [x] **Davet Linki Kopyalama Düzeltmesi:** Masaüstü ve Web ortamında oda davet linklerinin doğru yönlendirme adresi ile panoya kopyalanması sağlandı.
+- [x] **Masaüstü Otomatik Güncelleme (Electron Auto-Updater):** GitHub Releases entegrasyonu ve `electron-updater` ile yeni `.exe` sürümlerini otomatik kontrol edip sessiz indiren altyapı kuruldu.
 
 ---
 
 ## 💻 Masaüstü Uygulaması (Electron) Çalıştırma ve Build
 
 ### 1. Masaüstü Uygulamasını Geliştirme Modunda Çalıştırma
+
 ```bash
 npm run electron:dev
 ```
-*Bu komut hem Next.js sunucusunu hem de Electron masaüstü penceresini aynı anda başlatır.*
+
+_Bu komut hem Next.js sunucusunu hem de Electron masaüstü penceresini aynı anda başlatır._
 
 ### 2. Windows Installer (.exe) Paketlemesi Üretme
+
 ```bash
 npm run electron:build
 ```
+
 Üretilen kurulum dosyası `dist/` klasörü altına kaydedilecektir (`Voxa Desktop Setup 1.0.0.exe`).
 
 ---
@@ -149,17 +192,21 @@ DESKTOP_DOWNLOAD_URL=https://github.com/AYEDEV0/indirme/releases/download/v1Ses/
 ## 🚀 Geliştirme ve Çalıştırma
 
 ### 1. Bağımlılıkları Yükleme
+
 ```bash
 npm install
 ```
 
 ### 2. Geliştirme Sunucusunu Başlatma (Web)
+
 ```bash
 npm run dev
 ```
+
 Uygulamaya tarayıcıdan `http://localhost:3000` adresinden erişebilirsiniz.
 
 ### 3. Production Build Testi
+
 ```bash
 npm run build
 ```

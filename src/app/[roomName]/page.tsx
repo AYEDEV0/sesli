@@ -11,6 +11,7 @@ import {
   useLocalParticipant,
   useRoomContext,
   useChat,
+  useMediaDeviceSelect,
   TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
 import { Track, RoomEvent, setLogLevel } from "livekit-client";
@@ -48,6 +49,10 @@ import {
   ChevronUp,
   Laptop,
   Download,
+  Headphones,
+  HeadphoneOff,
+  Volume1,
+  Activity,
 } from "lucide-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
 
@@ -115,6 +120,24 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Kullanıcı Bazlı Ses Düzeyleri (0-100) ve Mute Durumları
   const [userVolumes, setUserVolumes] = useState<Record<string, number>>({});
   const [userMutedState, setUserMutedState] = useState<Record<string, boolean>>({});
+  const [isDeafened, setIsDeafened] = useState<boolean>(false);
+
+  // Masaüstü (Electron) Ekran Seçim Modalı
+  const [desktopPickerOpen, setDesktopPickerOpen] = useState<boolean>(false);
+  const [desktopSources, setDesktopSources] = useState<Array<{ id: string; name: string; thumbnail: string }>>([]);
+
+  // Ses Aygıtı Seçicileri (Mikrofon ve Hoparlör)
+  const {
+    devices: audioInputDevices,
+    activeDeviceId: activeAudioInputId,
+    setActiveMediaDevice: selectAudioInput,
+  } = useMediaDeviceSelect({ kind: "audioinput" });
+
+  const {
+    devices: audioOutputDevices,
+    activeDeviceId: activeAudioOutputId,
+    setActiveMediaDevice: selectAudioOutput,
+  } = useMediaDeviceSelect({ kind: "audiooutput" });
 
   // Açık olan kullanıcı ses ayar popover'ı (identity)
   const [openVolumeUserId, setOpenVolumeUserId] = useState<string | null>(null);
@@ -205,6 +228,13 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   // Toggle Fullscreen on Stage
   const toggleFullscreen = () => {
+    if (isElectronApp && (window as any).electronAPI?.toggleFullscreen) {
+      (window as any).electronAPI.toggleFullscreen().then((isFull: boolean) => {
+        setIsFullscreen(isFull);
+      });
+      return;
+    }
+
     if (!stageRef.current) return;
 
     if (!document.fullscreenElement) {
@@ -249,10 +279,20 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     if (activeScreenShareAudio?.publication?.track) {
       try {
         const audioTrack = activeScreenShareAudio.publication.track as any;
+        const rawVol = isScreenAudioMuted ? 0 : screenAudioVolume / 100;
+        const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
+
         if (typeof audioTrack.setVolume === "function") {
-          const rawVol = isScreenAudioMuted ? 0 : screenAudioVolume / 100;
-          const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
           audioTrack.setVolume(safeVol);
+        }
+
+        if (audioTrack.attachedElements) {
+          audioTrack.attachedElements.forEach((el: HTMLMediaElement) => {
+            el.volume = safeVol;
+            if (safeVol > 0 && el.paused) {
+              el.play().catch(() => {});
+            }
+          });
         }
       } catch (e) {
         console.warn("Ekran ses düzeyi ayarlama hatası:", e);
@@ -337,18 +377,89 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Copy Invite Link to Clipboard
   const handleCopyInvite = useCallback(() => {
     if (typeof window === "undefined") return;
-    const inviteUrl = `${window.location.origin}?room=${encodeURIComponent(roomName)}`;
+    const origin =
+      window.location.origin && window.location.origin !== "null" && !window.location.origin.startsWith("file:")
+        ? window.location.origin
+        : "https://ekkran.netlify.app";
+    const inviteUrl = `${origin}?room=${encodeURIComponent(roomName)}`;
     navigator.clipboard.writeText(inviteUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   }, [roomName]);
 
+  // Sağırlaştırma (Deafen) Geçiş Fonksiyonu
+  const toggleDeafen = async () => {
+    const nextDeafened = !isDeafened;
+    setIsDeafened(nextDeafened);
+    if (nextDeafened) {
+      if (isMicrophoneEnabled) {
+        await localParticipant.setMicrophoneEnabled(false);
+      }
+      micTracks.forEach((t) => {
+        if (t.publication?.track) {
+          try {
+            (t.publication.track as any).setVolume(0);
+          } catch (e) {}
+        }
+      });
+    } else {
+      participants.forEach((p) => {
+        const vol = userVolumes[p.identity] ?? 100;
+        const isMuted = !!userMutedState[p.identity];
+        applyUserVolume(p.identity, vol, isMuted);
+      });
+    }
+  };
+
+  // Kısayol Tuşları (Keybindings Listener)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
+      const key = e.key.toLowerCase();
+      if (key === "m") {
+        toggleMic();
+      } else if (key === "d") {
+        toggleDeafen();
+      } else if (key === "f") {
+        toggleFullscreen();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isMicrophoneEnabled, isDeafened]);
+
   // Audio / Video Controls
   const toggleMic = async () => {
     try {
+      if (isDeafened) setIsDeafened(false);
       await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
     } catch (err) {
       console.error("Mikrofon değiştirilemedi:", err);
+    }
+  };
+
+  // Masaüstü Ekran Paylaşım Seçici Açma
+  const handleOpenScreenSharePicker = async () => {
+    if (isScreenShareEnabled) {
+      await localParticipant.setScreenShareEnabled(false);
+      return;
+    }
+
+    if (isElectronApp && (window as any).electronAPI?.getDesktopSources) {
+      try {
+        const sources = await (window as any).electronAPI.getDesktopSources();
+        if (sources && sources.length > 0) {
+          setDesktopSources(sources);
+          setDesktopPickerOpen(true);
+        } else {
+          toggleScreenShare();
+        }
+      } catch (err) {
+        console.error("Masaüstü kaynakları alınamadı:", err);
+        toggleScreenShare();
+      }
+    } else {
+      toggleScreenShare();
     }
   };
 
@@ -913,9 +1024,22 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ? "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
                 : "bg-[#f23f43] hover:bg-[#d8363a] text-white"
             }`}
-            title={isMicrophoneEnabled ? "Mikrofonu Kapat" : "Mikrofonu Aç"}
+            title={isMicrophoneEnabled ? "Mikrofonu Kapat (Kısayol: M)" : "Mikrofonu Aç (Kısayol: M)"}
           >
             {isMicrophoneEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+          </button>
+
+          {/* Deafen Toggle */}
+          <button
+            onClick={toggleDeafen}
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow ${
+              isDeafened
+                ? "bg-[#f23f43] hover:bg-[#d8363a] text-white"
+                : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
+            }`}
+            title={isDeafened ? "Sağırlaştırmayı Kaldır (Kısayol: D)" : "Sağırlaştır (Gelen Tüm Sesleri Kapat - Kısayol: D)"}
+          >
+            {isDeafened ? <HeadphoneOff className="w-5 h-5 text-white" /> : <Headphones className="w-5 h-5 text-[#949ba4]" />}
           </button>
 
           {/* Camera Toggle */}
@@ -933,13 +1057,13 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
           {/* Screen Share Toggle */}
           <button
-            onClick={toggleScreenShare}
+            onClick={handleOpenScreenSharePicker}
             className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all cursor-pointer shadow ${
               isScreenShareEnabled
                 ? "bg-[#5865f2] hover:bg-[#4752c4] text-white"
                 : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
             }`}
-            title={isScreenShareEnabled ? "Ekran Paylaşımını Durdur" : "2K Ekran Paylaşımını Başlat"}
+            title={isScreenShareEnabled ? "Ekran Paylaşımını Durdur" : "Ekran veya Pencere Paylaşımı Başlat"}
           >
             {isScreenShareEnabled ? <MonitorOff className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
           </button>
@@ -952,7 +1076,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ? "bg-[#5865f2] hover:bg-[#4752c4] text-white"
                 : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
             }`}
-            title={isFullscreen ? "Tam Ekrandan Çık" : "Yayını Tam Ekran Yap"}
+            title={isFullscreen ? "Tam Ekrandan Çık (Kısayol: F)" : "Yayını Tam Ekran Yap (Kısayol: F)"}
           >
             {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
           </button>
@@ -965,7 +1089,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ? "bg-[#5865f2] hover:bg-[#4752c4] text-white"
                 : "bg-[#313338] hover:bg-[#35373c] text-white border border-[#404249]"
             }`}
-            title="Ses, Yayın Kalitesi ve Görüşme Ayarları"
+            title="Ses, Aygıt Seçimi, Yayın Kalitesi ve Görüşme Ayarları"
           >
             <Settings className="w-5 h-5" />
             {isNoiseFilterEnabled && (
@@ -1014,6 +1138,52 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
             {/* Modal Body */}
             <div className="p-6 flex flex-col gap-5 max-h-[75vh] overflow-y-auto">
+              {/* 0. Giriş ve Çıkış Aygıtı Seçimi (Mikrofon & Hoparlör) */}
+              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-white font-bold text-sm">
+                  <Mic className="w-4 h-4 text-[#5865f2]" />
+                  <span>Ses Giriş ve Çıkış Aygıtları</span>
+                </div>
+
+                <div className="flex flex-col gap-3 mt-1">
+                  {/* Mikrofon Seçimi */}
+                  <div>
+                    <label className="block text-xs font-bold text-[#949ba4] mb-1.5">
+                      Mikrofon (Giriş Aygıtı)
+                    </label>
+                    <select
+                      value={activeAudioInputId}
+                      onChange={(e) => selectAudioInput(e.target.value)}
+                      className="w-full bg-[#313338] border border-[#404249] focus:border-[#5865f2] text-xs font-medium text-white p-2.5 rounded-xl outline-none transition-all"
+                    >
+                      {audioInputDevices.map((dev) => (
+                        <option key={dev.deviceId} value={dev.deviceId}>
+                          {dev.label || `Mikrofon (${dev.deviceId.slice(0, 8)})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Hoparlör Seçimi */}
+                  <div>
+                    <label className="block text-xs font-bold text-[#949ba4] mb-1.5">
+                      Hoparlör / Kulaklık (Çıkış Aygıtı)
+                    </label>
+                    <select
+                      value={activeAudioOutputId}
+                      onChange={(e) => selectAudioOutput(e.target.value)}
+                      className="w-full bg-[#313338] border border-[#404249] focus:border-[#5865f2] text-xs font-medium text-white p-2.5 rounded-xl outline-none transition-all"
+                    >
+                      {audioOutputDevices.map((dev) => (
+                        <option key={dev.deviceId} value={dev.deviceId}>
+                          {dev.label || `Kulaklık (${dev.deviceId.slice(0, 8)})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               {/* 1. Krisp AI Noise Filter Option */}
               <div
                 onClick={handleToggleNoiseFilter}
@@ -1024,7 +1194,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     className={`p-2.5 rounded-xl mt-0.5 transition-colors ${
                       isNoiseFilterEnabled
                         ? "bg-[#5865f2]/20 text-[#5865f2]"
-                        : "bg-[#313338] text-[#949ba4]"
+                        : "bg-[#313338]"
                     }`}
                   >
                     <Sparkles className="w-5 h-5" />
@@ -1168,6 +1338,64 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 className="px-5 py-2 bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-bold rounded-xl transition-all shadow cursor-pointer"
               >
                 Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MASAÜSTÜ EKRAN / PENCERE SEÇİM MODALI (ELECTRON SCREEN PICKER) */}
+      {desktopPickerOpen && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-[#2b2d31] border border-[#383a40] rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="px-6 py-4 bg-[#1e1f22] border-b border-[#313338] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-[#5865f2]/20 rounded-xl flex items-center justify-center text-[#5865f2]">
+                  <Monitor className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-sm font-bold text-white tracking-wide">Yayınlanacak Ekranı veya Pencereyi Seçin</h2>
+                  <p className="text-xs text-[#949ba4]">Paylaşmak istediğiniz uygulama penceresine veya ekrana tıklayın</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setDesktopPickerOpen(false)}
+                className="p-1.5 rounded-xl text-[#949ba4] hover:text-white hover:bg-[#313338] transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-4 flex-1">
+              {desktopSources.map((src) => (
+                <div
+                  key={src.id}
+                  onClick={() => {
+                    setDesktopPickerOpen(false);
+                    toggleScreenShare();
+                  }}
+                  className="bg-[#1e1f22] border border-[#313338] hover:border-[#5865f2] rounded-xl p-2.5 flex flex-col gap-2 cursor-pointer transition-all hover:scale-[1.02] group shadow"
+                >
+                  <div className="w-full aspect-video bg-black rounded-lg overflow-hidden relative">
+                    <img
+                      src={src.thumbnail}
+                      alt={src.name}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <p className="text-xs font-semibold text-[#f2f3f5] truncate group-hover:text-[#5865f2] transition-colors">
+                    {src.name}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            <div className="px-6 py-3.5 bg-[#1e1f22] border-t border-[#313338] flex justify-end">
+              <button
+                onClick={() => setDesktopPickerOpen(false)}
+                className="px-4 py-2 bg-[#313338] hover:bg-[#35373c] text-white text-xs font-semibold rounded-xl transition-all cursor-pointer"
+              >
+                İptal
               </button>
             </div>
           </div>
