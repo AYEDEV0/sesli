@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Mic, Radio, User, DoorOpen, Sparkles, ArrowRight } from "lucide-react";
+import { Mic, Radio, User, DoorOpen, Sparkles, ArrowRight, Laptop, Download } from "lucide-react";
 
 function JoinForm() {
   const router = useRouter();
@@ -11,6 +11,13 @@ function JoinForm() {
   const [username, setUsername] = useState<string>("");
   const [roomName, setRoomName] = useState<string>("");
   const [error, setError] = useState<string>("");
+  const [isElectronApp, setIsElectronApp] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).electronAPI) {
+      setIsElectronApp(true);
+    }
+  }, []);
 
   useEffect(() => {
     const roomParam = searchParams.get("room");
@@ -119,6 +126,21 @@ function JoinForm() {
             <ArrowRight className="w-5 h-5" />
           </button>
         </form>
+
+        {/* Masaüstü Uygulamasını İndir Alanı */}
+        {!isElectronApp && (
+          <div className="mt-6 pt-5 border-t border-[#2b2d31]">
+            <a
+              href="/api/download/desktop"
+              download
+              className="w-full py-3 px-4 bg-[#1e1f22] hover:bg-[#2b2d31] border border-[#313338] hover:border-[#5865f2]/50 text-xs font-semibold text-[#949ba4] hover:text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm group"
+            >
+              <Laptop className="w-4 h-4 text-[#5865f2]" />
+              <span>Voxa Masaüstü Uygulamasını İndir (v1.0.0)</span>
+              <Download className="w-4 h-4 text-[#949ba4] group-hover:text-white transition-colors ml-auto" />
+            </a>
+          </div>
+        )}
 
       </div>
     </div>

@@ -54,6 +54,37 @@
 
 ---
 
+## 🗺️ Proje Bağlantı Mantığı ve Düzeltme Yol Haritası
+
+### 🔗 Bağlantı & Çalışma Mantığı
+1. **Giriş ve Yönlendirme (`/`):** Kullanıcı adı ve oda adı alınıp URL parametreleriyle `/[roomName]?username=...` rotasına yönlendirilir.
+2. **Token Oluşturma (`/api/token`):** Oda yüklenirken sunucu tarafında LiveKit API Key ve Secret kullanılarak güvenli JWT Token üretilir. Oda kilitli ise `403 Forbidden` ile katılım engellenir.
+3. **Canlı Odaya Bağlantı (`LiveKitRoom`):** Token ile LiveKit WebSocket sunucusuna bağlanılır. Sesli iletişim, video, ekran paylaşımı ve sohbet kanalları aktif edilir.
+4. **Ekran & Ses Akışı:** WebRTC `getDisplayMedia` protokolü üzerinden 2K 60 FPS'e kadar görüntü ve sistem/sekme sesi yayınlanır.
+
+### 🛠️ Yapılan Düzeltmeler Yol Haritası
+- [x] **Ekran Paylaşımı Ses Düzeltmesi:** Ekran paylaşımında ses verme seçeneği seçildiğinde paylaşımın başlamama sorunu düzeltildi. Tarayıcı/pencere bazlı ses desteksizliği durumunda ekran paylaşımının düşmemesi için esnek fallback mekanizması eklendi.
+- [x] **Ayarlar Menüsü Metin Temizliği:** Ayarlar modalı içerisinde yer alan gereksiz açıklama metni (`LiveKit Cloud 2K @ 60 FPS...`) kaldırıldı.
+- [x] **Giriş Yükleme Ekranı Sadeleştirmesi:** Odaya katılırken ekranda beliren "LiveKit token alınıyor..." teknik bilgisi kaldırıldı, kullanıcıya sade "Odaya Bağlanılıyor..." bilgisi sağlandı.
+- [x] **Electron Masaüstü Uygulaması & Web'den İndirme:** Web sitesi ana sayfası ve oda ayarlar modalına "Voxa Masaüstü Uygulamasını İndir (v1.0.0)" butonu ve `/api/download/desktop` endpoint'i entegre edildi. Masaüstü uygulamasında açıldığında otomatik algılama ve güncellik bilgisi sağlandı.
+
+---
+
+## 💻 Masaüstü Uygulaması (Electron) Çalıştırma ve Build
+
+### 1. Masaüstü Uygulamasını Geliştirme Modunda Çalıştırma
+```bash
+npm run electron:dev
+```
+
+### 2. Windows Installer (.exe) Paketlemesi Üretme
+```bash
+npm run electron:build
+```
+Üretilen kurulum dosyası `dist/` klasörü altına kaydedilecektir.
+
+---
+
 ## 📁 Proje Klasör Yapısı
 
 ```
@@ -110,3 +141,4 @@ Uygulamaya tarayıcıdan `http://localhost:3000` adresinden erişebilirsiniz.
 ```bash
 npm run build
 ```
+

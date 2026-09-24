@@ -46,6 +46,8 @@ import {
   Tv,
   ChevronDown,
   ChevronUp,
+  Laptop,
+  Download,
 } from "lucide-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
 
@@ -122,6 +124,15 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [screenAudioEnabled, setScreenAudioEnabled] = useState<boolean>(true);
   const [screenAudioVolume, setScreenAudioVolume] = useState<number>(100); // 0 - 100 %
   const [isScreenAudioMuted, setIsScreenAudioMuted] = useState<boolean>(false);
+
+  // Electron Masaüstü Uygulaması Durumu
+  const [isElectronApp, setIsElectronApp] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && (window as any).electronAPI) {
+      setIsElectronApp(true);
+    }
+  }, []);
 
   // LiveKit Krisp AI Gürültü Engelleme Filtresi Hook'u
   const { isNoiseFilterEnabled, setNoiseFilterEnabled, isNoiseFilterPending } =
@@ -356,31 +367,60 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
         await localParticipant.setScreenShareEnabled(false);
       } else {
         const preset = SCREEN_SHARE_PRESETS[screenQuality];
-        await localParticipant.setScreenShareEnabled(
-          true,
-          {
-            audio: screenAudioEnabled
-              ? {
-                  echoCancellation: false,
-                  noiseSuppression: false,
-                  autoGainControl: false,
-                }
-              : false,
-            resolution: {
-              width: preset.width,
-              height: preset.height,
-              frameRate: preset.frameRate,
+        try {
+          await localParticipant.setScreenShareEnabled(
+            true,
+            {
+              audio: screenAudioEnabled
+                ? {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    suppressLocalAudioPlayback: false,
+                  } as any
+                : false,
+              resolution: {
+                width: preset.width,
+                height: preset.height,
+                frameRate: preset.frameRate,
+              },
+              selfBrowserSurface: "include",
+              surfaceSwitching: "include",
             },
-            selfBrowserSurface: "include",
-            surfaceSwitching: "include",
-          },
-          {
-            videoEncoding: {
-              maxBitrate: preset.maxBitrate,
-              maxFramerate: preset.frameRate,
-            },
+            {
+              videoEncoding: {
+                maxBitrate: preset.maxBitrate,
+                maxFramerate: preset.frameRate,
+              },
+            }
+          );
+        } catch (audioErr) {
+          if (screenAudioEnabled) {
+            console.warn("Ekran sesi ile paylaşım başarısız oldu, sessiz paylaşım deneniyor:", audioErr);
+            // Fallback: Ekran ses desteksiz tarayıcı/pencere seçimlerinde ekran paylaşımının düşmesini engelle
+            await localParticipant.setScreenShareEnabled(
+              true,
+              {
+                audio: false,
+                resolution: {
+                  width: preset.width,
+                  height: preset.height,
+                  frameRate: preset.frameRate,
+                },
+                selfBrowserSurface: "include",
+                surfaceSwitching: "include",
+              },
+              {
+                videoEncoding: {
+                  maxBitrate: preset.maxBitrate,
+                  maxFramerate: preset.frameRate,
+                },
+              }
+            );
+          } else {
+            throw audioErr;
           }
-        );
+        }
       }
     } catch (err) {
       console.error("Ekran paylaşımı başlatılamadı:", err);
@@ -781,7 +821,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
             </div>
 
             {/* Chat Messages Area */}
-            <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-[#2b2d31]">
+            <div className="flex-1 p-3 overflow-y-auto space-y-3 bg-[#2b2d31] select-text cursor-text">
               {chatMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center text-[#949ba4] p-4">
                   <MessageSquare className="w-8 h-8 text-[#5865f2]/40 mb-2" />
@@ -804,14 +844,14 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                       key={idx}
                       className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <span className="text-[11px] font-bold text-white">
+                      <div className="flex items-center gap-1.5 mb-1 select-text">
+                        <span className="text-[11px] font-bold text-white select-text">
                           {senderName}
                         </span>
-                        <span className="text-[10px] text-[#949ba4]">{formattedTime}</span>
+                        <span className="text-[10px] text-[#949ba4] select-text">{formattedTime}</span>
                       </div>
                       <div
-                        className={`p-2.5 rounded-xl text-xs max-w-[90%] break-words ${
+                        className={`p-2.5 rounded-xl text-xs max-w-[90%] break-words select-text cursor-text ${
                           isMe
                             ? "bg-[#5865f2] text-white rounded-tr-none"
                             : "bg-[#313338] text-[#f2f3f5] rounded-tl-none border border-[#1e1f22]"
@@ -1036,9 +1076,6 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                   <Tv className="w-4 h-4 text-[#5865f2]" />
                   <span>Ekran Paylaşımı Çözünürlük & FPS</span>
                 </div>
-                <p className="text-xs text-[#949ba4]">
-                  Ekran paylaşımı açıldığında gönderilecek hedef kalite seçeneği. (LiveKit Cloud 2K @ 60 FPS yayınları ücretsiz destekler).
-                </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
                   {(Object.keys(SCREEN_SHARE_PRESETS) as ScreenSharePresetKey[]).map((key) => {
@@ -1088,6 +1125,39 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                   />
                   <div className="w-11 h-6 bg-[#313338] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#5865f2]"></div>
                 </label>
+              </div>
+
+              {/* 4. Masaüstü Uygulaması (Son Versiyon & İndir) */}
+              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-2.5 rounded-xl bg-[#5865f2]/20 text-[#5865f2] mt-0.5">
+                    <Laptop className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-white">Voxa Masaüstü Uygulaması</span>
+                      <span className="bg-[#23a55a]/20 text-[#23a55a] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#23a55a]/30">
+                        v1.0.0 (Son Sürüm)
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
+                      {isElectronApp
+                        ? "Masaüstü uygulaması üzerinden bağlısınız. Tüm oyun/uygulama sesleri ve 2K 60 FPS yayınlar aktif."
+                        : "Tüm uygulama ve oyun seslerini engelsiz 2K 60 FPS yayınlamak için masaüstü uygulamasını indirin."}
+                    </p>
+                  </div>
+                </div>
+
+                {!isElectronApp && (
+                  <a
+                    href="/api/download/desktop"
+                    download
+                    className="px-4 py-2 bg-[#5865f2] hover:bg-[#4752c4] active:scale-95 text-white text-xs font-bold rounded-xl transition-all shadow flex items-center gap-2 flex-shrink-0 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Masaüstü Uygulamasını İndir (.exe)</span>
+                  </a>
+                )}
               </div>
 
             </div>
@@ -1166,9 +1236,6 @@ function RoomContainer() {
       <div className="min-h-screen bg-[#1e1f22] flex flex-col items-center justify-center text-white gap-4">
         <Loader2 className="w-12 h-12 text-[#5865f2] animate-spin" />
         <h2 className="text-lg font-bold">Odaya Bağlanılıyor...</h2>
-        <p className="text-sm text-[#949ba4]">
-          #{roomName} odası için LiveKit token alınıyor.
-        </p>
       </div>
     );
   }
