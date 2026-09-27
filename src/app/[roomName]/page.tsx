@@ -120,6 +120,21 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
 
+  // Tarayıcı Ses Otomatik Oynatma Engel Takibi (Autoplay Policy)
+  const [canPlayAudio, setCanPlayAudio] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!room) return;
+    const handleAudioChange = () => {
+      setCanPlayAudio(room.canPlaybackAudio);
+    };
+    setCanPlayAudio(room.canPlaybackAudio);
+    room.on(RoomEvent.AudioPlaybackStatusChanged, handleAudioChange);
+    return () => {
+      room.off(RoomEvent.AudioPlaybackStatusChanged, handleAudioChange);
+    };
+  }, [room]);
+
   // Oda Kilitleme Durumu
   const [isRoomLocked, setIsRoomLocked] = useState<boolean>(false);
   const [isLockingPending, setIsLockingPending] = useState<boolean>(false);
@@ -585,6 +600,17 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   return (
     <div className="flex flex-col h-screen w-screen bg-[#1e1f22] text-[#f2f3f5] overflow-hidden select-none">
+      {/* Tarayıcı Ses Otomatik Oynatma Engeli Uyarısı */}
+      {!canPlayAudio && (
+        <div
+          onClick={() => room?.startAudio()}
+          className="bg-[#5865f2] hover:bg-[#4752c4] text-white py-2.5 px-4 text-center text-xs font-extrabold cursor-pointer flex items-center justify-center gap-2 z-50 shadow-lg animate-pulse"
+        >
+          <Volume2 className="w-4 h-4 animate-bounce" />
+          <span>Tarayıcınız diğer katılımcıların sesini engelledi. Sesleri duymak için BURAYA TIKLAYIN!</span>
+        </div>
+      )}
+
       {/* ÜST DAVET, ODA KİLİDİ VE ODA BARI */}
       <header className="h-16 bg-[#2b2d31] border-b border-[#1e1f22] px-6 flex items-center justify-between z-20 shadow-md">
         <div className="flex items-center gap-3">
@@ -1526,6 +1552,13 @@ function RoomContainer() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
+      }}
+      options={{
+        publishDefaults: {
+          simulcast: true,
+        },
+        adaptiveStream: true,
+        dynacast: true,
       }}
       token={token}
       serverUrl={wsUrl}
