@@ -27,13 +27,15 @@ export async function POST(request: NextRequest) {
     const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
     const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
 
+    const cleanRoom = room.trim().toLowerCase();
+
     // LiveKit Odasının metadata alanına kilit durumunu yazıyoruz
     const metadataString = JSON.stringify({ locked });
-    await roomService.updateRoomMetadata(room, metadataString);
+    await roomService.updateRoomMetadata(cleanRoom, metadataString);
 
     return NextResponse.json({
       success: true,
-      room,
+      room: cleanRoom,
       locked,
     });
   } catch (error: unknown) {

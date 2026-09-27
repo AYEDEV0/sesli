@@ -31,7 +31,7 @@ function JoinForm() {
     setError("");
 
     const trimmedUsername = username.trim();
-    const trimmedRoomName = roomName.trim();
+    const trimmedRoomName = roomName.trim().toLowerCase();
 
     if (!trimmedUsername) {
       setError("Lütfen geçerli bir kullanıcı adı girin.");

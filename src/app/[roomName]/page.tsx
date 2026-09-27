@@ -95,6 +95,13 @@ const SCREEN_SHARE_PRESETS = {
 
 type ScreenSharePresetKey = keyof typeof SCREEN_SHARE_PRESETS;
 
+const getDisplayName = (p?: { name?: string; identity?: string }) => {
+  if (!p) return "Misafir";
+  if (p.name) return p.name;
+  if (p.identity) return p.identity.split("#")[0];
+  return "Misafir";
+};
+
 function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const router = useRouter();
   const room = useRoomContext();
@@ -383,8 +390,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Copy Invite Link to Clipboard
   const handleCopyInvite = useCallback(() => {
     if (typeof window === "undefined") return;
-    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || "https://ses.app.noticq.com";
-    const inviteUrl = `${baseDomain}?room=${encodeURIComponent(roomName)}`;
+    const baseDomain = process.env.NEXT_PUBLIC_APP_URL || (typeof window !== "undefined" ? window.location.origin : "https://ses.app.noticq.com");
+    const inviteUrl = `${baseDomain}?room=${encodeURIComponent(roomName.toLowerCase())}`;
 
     try {
       if ((window as any).electronAPI?.clipboardWriteText) {
@@ -693,7 +700,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                   <>
                     <Monitor className="w-4 h-4 text-[#5865f2]" />
                     <span className="font-semibold">
-                      {activeFocusTrack.participant.identity} kullanıcısının canlı yayını
+                      {getDisplayName(activeFocusTrack.participant)} kullanıcısının canlı yayını
                     </span>
                     <span className="bg-[#5865f2] text-white text-[10px] font-black px-1.5 py-0.5 rounded">
                       {SCREEN_SHARE_PRESETS[screenQuality].label.split(" ")[1]}
@@ -702,7 +709,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 ) : (
                   <>
                     <VideoIcon className="w-4 h-4 text-[#23a55a]" />
-                    <span>{activeFocusTrack.participant.identity} kamerasında</span>
+                    <span>{getDisplayName(activeFocusTrack.participant)} kamerasında</span>
                   </>
                 )}
               </div>
@@ -839,7 +846,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     >
                       <div className="relative flex-shrink-0">
                         <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow">
-                          {p.identity.slice(0, 2).toUpperCase()}
+                          {getDisplayName(p).slice(0, 2).toUpperCase()}
                         </div>
                         {isSpeaking && (
                           <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#23a55a] rounded-full border-2 border-[#313338] flex items-center justify-center">
@@ -850,7 +857,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
                       <div className="truncate">
                         <p className="text-sm font-semibold text-white truncate">
-                          {p.identity} {isMe && "(Siz)"}
+                          {getDisplayName(p)} {isMe && "(Siz)"}
                         </p>
                         <p className="text-xs text-[#949ba4] flex items-center gap-1">
                           {p.isSpeaking ? (
@@ -963,8 +970,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 </div>
               ) : (
                 chatMessages.map((msg, idx) => {
-                  const senderName = msg.from?.identity || "Anonim";
-                  const isMe = senderName === username;
+                  const senderName = getDisplayName(msg.from);
+                  const isMe = msg.from?.name === username || msg.from?.identity?.startsWith(`${username}#`) || senderName === username;
                   const formattedTime = new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: "2-digit",
                     minute: "2-digit",
@@ -1428,9 +1435,12 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 function RoomContainer() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const router = useRouter();
 
-  const roomName = (params?.roomName as string) || "";
-  const username = searchParams.get("username") || "Misafir";
+  const rawRoom = (params?.roomName as string) || "";
+  const roomName = decodeURIComponent(rawRoom).trim().toLowerCase();
+  const usernameParam = searchParams.get("username");
+  const username = usernameParam?.trim() || "";
 
   const [token, setToken] = useState<string>("");
   const [wsUrl, setWsUrl] = useState<string>("");
@@ -1439,6 +1449,11 @@ function RoomContainer() {
 
   useEffect(() => {
     let isMounted = true;
+
+    if (!usernameParam) {
+      router.replace(`/?room=${encodeURIComponent(roomName)}`);
+      return;
+    }
 
     async function fetchToken() {
       try {
@@ -1476,7 +1491,7 @@ function RoomContainer() {
     return () => {
       isMounted = false;
     };
-  }, [roomName, username]);
+  }, [roomName, username, usernameParam, router]);
 
   if (loading) {
     return (
