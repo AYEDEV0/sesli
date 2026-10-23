@@ -14,7 +14,7 @@ import {
   useMediaDeviceSelect,
   TrackReferenceOrPlaceholder,
 } from "@livekit/components-react";
-import { Track, RoomEvent, setLogLevel } from "livekit-client";
+import { Track, RoomEvent, setLogLevel, RemoteAudioTrack } from "livekit-client";
 
 setLogLevel("warn");
 import {
@@ -56,6 +56,9 @@ import {
   Paperclip,
   FileText,
   Image as ImageIcon,
+  Smile,
+  Upload,
+  Camera,
 } from "lucide-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
 import { playJoinSound, playLeaveSound, playMuteSound } from "@/lib/sounds";
@@ -66,6 +69,13 @@ import {
   formatFileSize,
   SharedFileMeta,
 } from "@/lib/p2p-file-transfer";
+import {
+  PRESET_AVATARS,
+  getStoredAvatar,
+  storeAvatar,
+  clearStoredAvatar,
+  compressAndCropAvatar,
+} from "@/lib/avatars";
 
 interface RoomContentProps {
   roomName: string;
@@ -136,6 +146,21 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
   const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Lightbox Modal Durumu
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string } | null>(null);
+
+  // Avatar Yönetimi Durumu
+  const [roomAvatar, setRoomAvatar] = useState<string | null>(null);
+  const [avatarModalOpen, setAvatarModalOpen] = useState<boolean>(false);
+  const roomAvatarInputRef = useRef<HTMLInputElement>(null);
+
+  // Çoklu Yayın ve Yayından Ayrıl / İzle Durumları
+  const [watchedTrackSid, setWatchedTrackSid] = useState<string | null>(null);
+  const [isWatchingStream, setIsWatchingStream] = useState<boolean>(true);
+
+  // Ekran Sesi Doğrudan HTMLAudioElement Referansı
+  const screenShareAudioElRef = useRef<HTMLAudioElement | null>(null);
 
   // Tarayıcı Ses Otomatik Oynatma Engel Takibi (Autoplay Policy)
   const [canPlayAudio, setCanPlayAudio] = useState<boolean>(true);
@@ -279,7 +304,13 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
     const manager = new P2PTransferManager((targetIdentity, payload) => {
       try {
-        const str = JSON.stringify({ voxaP2P: true, targetIdentity, ...payload });
+        const fromIdentity = room.localParticipant?.identity || localParticipant.identity;
+        const str = JSON.stringify({
+          voxaP2P: true,
+          targetIdentity,
+          senderIdentity: fromIdentity,
+          ...payload,
+        });
         const bytes = new TextEncoder().encode(str);
         room.localParticipant.publishData(bytes, { reliable: true });
       } catch (err) {
@@ -295,11 +326,13 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
         const data = JSON.parse(text);
         if (!data.voxaP2P) return;
 
-        if (data.targetIdentity && data.targetIdentity !== localParticipant.identity) {
+        const myId = room.localParticipant?.identity || localParticipant.identity;
+        if (data.targetIdentity && data.targetIdentity !== myId) {
           return;
         }
 
-        const senderIdentity = participant?.identity || data.senderIdentity;
+        const senderIdentity = data.senderIdentity || participant?.identity;
+        if (!senderIdentity) return;
 
         if (data.type === "P2P_FILE_REQUEST") {
           manager.handleFileRequest(data.fileId, senderIdentity);
@@ -309,6 +342,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
           manager.handleAnswer(data.fileId, senderIdentity, data.sdp);
         } else if (data.type === "P2P_CANDIDATE") {
           manager.handleCandidate(data.fileId, senderIdentity, data.candidate);
+        } else if (data.type === "P2P_CANCEL") {
+          manager.handleCancelSignal(data.fileId, senderIdentity);
         }
       } catch {
         // ignore non-json data
@@ -322,6 +357,73 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
       manager.cleanup();
     };
   }, [room, localParticipant.identity]);
+
+  // Kayıtlı avatarı LiveKit metadata'sına eşitleme
+  useEffect(() => {
+    if (!room) return;
+    const saved = getStoredAvatar();
+    if (saved) {
+      setRoomAvatar(saved);
+      try {
+        room.localParticipant.setMetadata(JSON.stringify({ avatar: saved }));
+      } catch (err) {
+        console.warn("Avatar metadata hatası:", err);
+      }
+    }
+  }, [room]);
+
+  // Katılımcının avatarını çözümleme fonksiyonu
+  const getParticipantAvatar = (p?: any): string | null => {
+    if (!p) return null;
+    const isMe =
+      p.identity === localParticipant.identity ||
+      p.identity === room?.localParticipant?.identity;
+    if (isMe && roomAvatar) return roomAvatar;
+    if (p.metadata) {
+      try {
+        const parsed = JSON.parse(p.metadata);
+        if (parsed.avatar) return parsed.avatar;
+      } catch {}
+    }
+    return null;
+  };
+
+  // Avatar Değiştirme / Yükleme İşleyicileri
+  const handleUpdateRoomAvatar = async (avatarDataUrl: string) => {
+    setRoomAvatar(avatarDataUrl);
+    storeAvatar(avatarDataUrl);
+    if (room?.localParticipant) {
+      try {
+        await room.localParticipant.setMetadata(JSON.stringify({ avatar: avatarDataUrl }));
+      } catch (e) {
+        console.warn("Avatar güncelleme hatası:", e);
+      }
+    }
+    setAvatarModalOpen(false);
+  };
+
+  const handleRoomCustomAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const cropped = await compressAndCropAvatar(file);
+      await handleUpdateRoomAvatar(cropped);
+      if (roomAvatarInputRef.current) roomAvatarInputRef.current.value = "";
+    } catch (err: any) {
+      alert(err.message || "Avatar yüklenirken bir hata oluştu.");
+    }
+  };
+
+  const handleRemoveRoomAvatar = async () => {
+    setRoomAvatar(null);
+    clearStoredAvatar();
+    if (room?.localParticipant) {
+      try {
+        await room.localParticipant.setMetadata(JSON.stringify({ avatar: null }));
+      } catch {}
+    }
+    setAvatarModalOpen(false);
+  };
 
   const stageRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -380,44 +482,84 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     onlySubscribed: false,
   });
 
-  // Ekran paylaşımı video track'ini bul
-  const screenShareTrack = videoTracks.find(
+  // Odadaki tüm ekran paylaşımı video track'lerini listele
+  const screenShareTracks = videoTracks.filter(
     (t) => t.source === Track.Source.ScreenShare && t.publication?.isSubscribed !== false
   );
 
-  // Ekran paylaşımı ses track'ini bul
-  const activeScreenShareAudio = screenShareAudioTracks.find(
-    (t) => t.source === Track.Source.ScreenShareAudio && t.publication?.isSubscribed !== false
-  );
+  // Kullanıcı yayın izlemeyi kapatmadıysa ve seçili yayın varsa onu, yoksa ilk yayını izle
+  const activeScreenShare = isWatchingStream
+    ? (watchedTrackSid
+        ? screenShareTracks.find((t) => t.publication?.trackSid === watchedTrackSid) || screenShareTracks[0]
+        : screenShareTracks[0]) || null
+    : null;
 
-  // Odaklanan Medya İzleri
-  const activeFocusTrack = selectedTrack || screenShareTrack || null;
-
-  // Ekran Ses Düzeyini Güncelle (HTMLMediaElement volume [0.0, 1.0] aralığında olmalıdır)
-  useEffect(() => {
-    if (activeScreenShareAudio?.publication?.track) {
-      try {
-        const audioTrack = activeScreenShareAudio.publication.track as any;
-        const rawVol = isScreenAudioMuted ? 0 : screenAudioVolume / 100;
-        const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
-
-        if (typeof audioTrack.setVolume === "function") {
-          audioTrack.setVolume(safeVol);
-        }
-
-        if (audioTrack.attachedElements) {
-          audioTrack.attachedElements.forEach((el: HTMLMediaElement) => {
-            el.volume = safeVol;
-            if (safeVol > 0 && el.paused) {
-              el.play().catch(() => {});
-            }
-          });
-        }
-      } catch (e) {
-        console.warn("Ekran ses düzeyi ayarlama hatası:", e);
-      }
+  // Ekran paylaşımı ses track'ini bul (izlenen yayına ait ses)
+  const activeScreenShareAudio = screenShareAudioTracks.find((t) => {
+    if (t.source !== Track.Source.ScreenShareAudio || t.publication?.isSubscribed === false) {
+      return false;
     }
-  }, [activeScreenShareAudio, screenAudioVolume, isScreenAudioMuted]);
+    if (activeScreenShare) {
+      return t.participant.identity === activeScreenShare.participant.identity;
+    }
+    return true;
+  });
+
+  // Odaklanan Medya İzleri (Kamera veya Ekran)
+  const activeFocusTrack = selectedTrack || activeScreenShare || null;
+
+  // Ekran Sesini Doğrudan HTMLAudioElement İle Güvenli Çalma ve Ses Ayarı
+  useEffect(() => {
+    const audioTrackPub = activeScreenShareAudio?.publication;
+    const audioTrack = audioTrackPub?.track as RemoteAudioTrack | undefined;
+    const audioEl = screenShareAudioElRef.current;
+
+    if (!audioTrack || !audioEl) return;
+
+    if (!isWatchingStream) {
+      audioEl.pause();
+      try {
+        audioTrack.detach(audioEl);
+      } catch {}
+      return;
+    }
+
+    try {
+      audioTrack.attach(audioEl);
+
+      const rawVol = isScreenAudioMuted ? 0 : screenAudioVolume / 100;
+      const safeVol = Math.min(1.0, Math.max(0.0, rawVol));
+      audioEl.volume = safeVol;
+
+      if (typeof audioTrack.setVolume === "function") {
+        audioTrack.setVolume(safeVol);
+      }
+
+      if (activeAudioOutputId && typeof (audioEl as any).setSinkId === "function") {
+        (audioEl as any).setSinkId(activeAudioOutputId).catch(() => {});
+      }
+
+      if (safeVol > 0) {
+        audioEl.play().catch((err) => {
+          console.warn("Ekran sesi oynatılamadı (otomatik oynatma kısıtlaması):", err);
+        });
+      }
+    } catch (e) {
+      console.warn("Ekran sesi bağlama hatası:", e);
+    }
+
+    return () => {
+      try {
+        audioTrack.detach(audioEl);
+      } catch {}
+    };
+  }, [
+    activeScreenShareAudio,
+    screenAudioVolume,
+    isScreenAudioMuted,
+    isWatchingStream,
+    activeAudioOutputId,
+  ]);
 
   // Bireysel Kullanıcı Ses Düzeyini Güncelleme Fonksiyonu
   const applyUserVolume = (identity: string, volumePercent: number, isMuted: boolean) => {
@@ -547,6 +689,12 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Kısayol Tuşları (Keybindings Listener)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (lightboxImage) setLightboxImage(null);
+        if (avatarModalOpen) setAvatarModalOpen(false);
+        if (settingsOpen) setSettingsOpen(false);
+        return;
+      }
       if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
       const key = e.key.toLowerCase();
       if (key === "m") {
@@ -559,7 +707,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isMicrophoneEnabled, isDeafened]);
+  }, [isMicrophoneEnabled, isDeafened, lightboxImage, avatarModalOpen, settingsOpen]);
 
   // Audio / Video Controls
   const toggleMic = async () => {
@@ -606,7 +754,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     }
   };
 
-  // Ekran Paylaşımı (2K / 60 FPS + Ekran Sesi Yakalama Desteği)
+  // Ekran Paylaşımı (2K / 60 FPS + AV1 Düşük Kota + Ekran Sesi Yakalama Desteği)
   const toggleScreenShare = async () => {
     try {
       if (isScreenShareEnabled) {
@@ -622,9 +770,10 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     echoCancellation: false,
                     noiseSuppression: false,
                     autoGainControl: false,
-                    suppressLocalAudioPlayback: false,
                   } as any
                 : false,
+              systemAudio: "include",
+              suppressLocalAudioPlayback: false,
               resolution: {
                 width: preset.width,
                 height: preset.height,
@@ -634,6 +783,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               surfaceSwitching: "include",
             },
             {
+              videoCodec: "av1",
+              backupCodec: true,
               videoEncoding: {
                 maxBitrate: preset.maxBitrate,
                 maxFramerate: preset.frameRate,
@@ -648,6 +799,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               true,
               {
                 audio: false,
+                systemAudio: "include",
+                suppressLocalAudioPlayback: false,
                 resolution: {
                   width: preset.width,
                   height: preset.height,
@@ -657,6 +810,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 surfaceSwitching: "include",
               },
               {
+                videoCodec: "av1",
+                backupCodec: true,
                 videoEncoding: {
                   maxBitrate: preset.maxBitrate,
                   maxFramerate: preset.frameRate,
@@ -752,6 +907,19 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
         setDownloadingFileId(null);
       }
     );
+  };
+
+  // P2P Dosya İndirmesini İptal Etme
+  const handleCancelDownload = (fileId: string, senderIdentity?: string) => {
+    if (p2pManagerRef.current) {
+      p2pManagerRef.current.cancelTransfer(fileId, senderIdentity);
+    }
+    setDownloadingFileId(null);
+    setDownloadProgress((prev) => {
+      const copy = { ...prev };
+      delete copy[fileId];
+      return copy;
+    });
   };
 
   return (
@@ -876,8 +1044,40 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                 className="w-full h-full object-contain"
               />
 
-              {/* Focus Badge Info */}
-              <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-white flex items-center gap-2">
+              {/* Çoklu Yayın Seçici Barı (Birden fazla kişi ekran paylaşıyorsa) */}
+              {screenShareTracks.length > 1 && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 flex items-center gap-2 shadow-2xl z-30 max-w-[80%] overflow-x-auto">
+                  <span className="text-[10px] uppercase font-bold text-[#949ba4] tracking-wider flex items-center gap-1 flex-shrink-0">
+                    <Tv className="w-3.5 h-3.5 text-[#5865f2]" /> Yayınlar:
+                  </span>
+                  {screenShareTracks.map((st) => {
+                    const isCurrent =
+                      activeScreenShare?.publication?.trackSid === st.publication?.trackSid;
+                    return (
+                      <button
+                        key={st.publication?.trackSid || st.participant.identity}
+                        type="button"
+                        onClick={() => {
+                          setWatchedTrackSid(st.publication?.trackSid || null);
+                          setIsWatchingStream(true);
+                          setSelectedTrack(null);
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 flex-shrink-0 ${
+                          isCurrent
+                            ? "bg-[#5865f2] text-white shadow-md ring-1 ring-white/20"
+                            : "bg-[#1e1f22] text-[#949ba4] hover:text-white hover:bg-[#313338]"
+                        }`}
+                      >
+                        <span className="w-2 h-2 rounded-full bg-[#23a55a] animate-pulse" />
+                        <span>{getDisplayName(st.participant)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Focus Badge Info & Yayından Ayrıl Butonu */}
+              <div className="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 text-xs text-white flex items-center gap-2 z-20">
                 {activeFocusTrack.source === Track.Source.ScreenShare ? (
                   <>
                     <Monitor className="w-4 h-4 text-[#5865f2]" />
@@ -885,8 +1085,21 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                       {getDisplayName(activeFocusTrack.participant)} kullanıcısının canlı yayını
                     </span>
                     <span className="bg-[#5865f2] text-white text-[10px] font-black px-1.5 py-0.5 rounded">
-                      {SCREEN_SHARE_PRESETS[screenQuality].label.split(" ")[1]}
+                      AV1 • {SCREEN_SHARE_PRESETS[screenQuality].label.split(" ")[1]}
                     </span>
+                    {/* Yayından Ayrıl Butonu */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsWatchingStream(false);
+                        setSelectedTrack(null);
+                      }}
+                      className="ml-2 px-2.5 py-1 bg-[#f23f43]/85 hover:bg-[#f23f43] text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 shadow cursor-pointer border border-red-500/30"
+                      title="Yayını izlemeyi bırak ve sadece sesli sohbette kal"
+                    >
+                      <PhoneOff className="w-3.5 h-3.5" />
+                      <span>Yayından Ayrıl</span>
+                    </button>
                   </>
                 ) : (
                   <>
@@ -945,7 +1158,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               )}
 
               {/* Top Right Action Buttons (Tam Ekran & Reset Focus) */}
-              <div className="absolute top-4 right-4 flex items-center gap-2">
+              <div className="absolute top-4 right-4 flex items-center gap-2 z-20">
                 {/* Tam Ekran Yap Butonu */}
                 <button
                   onClick={toggleFullscreen}
@@ -979,9 +1192,36 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               <h3 className="text-xl font-bold text-white mb-2">
                 Sesli Odadasınız
               </h3>
-              <p className="text-sm text-[#949ba4] max-w-sm mb-6">
-                Biri ekran paylaşımı açtığında veya kamera çalıştırdığında yayın burada yüksek kalite 2K çözünürlükle canlı görüntülenecek.
+              <p className="text-sm text-[#949ba4] max-w-sm mb-4">
+                Biri ekran paylaşımı açtığında veya kamera çalıştırdığında yayın burada AV1 düşük kota ve yüksek kalitede canlı görüntülenecek.
               </p>
+
+              {/* Odada Aktif Yayın Varsa "Yayını İzle" Butonları */}
+              {screenShareTracks.length > 0 && (
+                <div className="mb-6 p-4 rounded-2xl bg-[#1e1f22]/70 border border-[#383a40] max-w-md w-full flex flex-col items-center gap-3 shadow-lg">
+                  <div className="flex items-center gap-2 text-xs font-bold text-white">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#23a55a] animate-pulse" />
+                    <span>Odadaki Aktif Canlı Yayınlar ({screenShareTracks.length})</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 justify-center w-full">
+                    {screenShareTracks.map((st) => (
+                      <button
+                        key={st.publication?.trackSid || st.participant.identity}
+                        type="button"
+                        onClick={() => {
+                          setWatchedTrackSid(st.publication?.trackSid || null);
+                          setIsWatchingStream(true);
+                          setSelectedTrack(null);
+                        }}
+                        className="px-3.5 py-2 bg-[#5865f2] hover:bg-[#4752c4] text-white text-xs font-semibold rounded-xl transition-all flex items-center gap-2 shadow cursor-pointer"
+                      >
+                        <Monitor className="w-4 h-4" />
+                        <span>{getDisplayName(st.participant)} Yayınına Katıl</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* General Fullscreen Button even without video track */}
               <button
@@ -993,6 +1233,14 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               </button>
             </div>
           )}
+
+          {/* Gizli Doğrudan Ekran Sesi Çalıcısı (Garanti Oynatma) */}
+          <audio
+            ref={screenShareAudioElRef}
+            playsInline
+            autoPlay
+            style={{ display: "none" }}
+          />
         </div>
 
         {/* KATILIMCI GRID & SES DÜZEYİ KONTROLLERİ (Sağ Yan Panel) */}
@@ -1013,6 +1261,11 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               const vol = userVolumes[p.identity] ?? 100;
               const isUserMuted = !!userMutedState[p.identity];
               const isVolumeOpen = openVolumeUserId === p.identity;
+              const pAvatar = getParticipantAvatar(p);
+              const isWatchingThisParticipant =
+                isWatchingStream &&
+                activeFocusTrack?.participant?.identity === p.identity &&
+                activeFocusTrack?.source === Track.Source.ScreenShare;
 
               return (
                 <div
@@ -1027,9 +1280,17 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                       className="flex items-center gap-3 overflow-hidden cursor-pointer flex-1"
                     >
                       <div className="relative flex-shrink-0">
-                        <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow">
-                          {getDisplayName(p).slice(0, 2).toUpperCase()}
-                        </div>
+                        {pAvatar ? (
+                          <img
+                            src={pAvatar}
+                            alt={getDisplayName(p)}
+                            className="w-10 h-10 rounded-xl object-cover shadow"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold text-sm shadow">
+                            {getDisplayName(p).slice(0, 2).toUpperCase()}
+                          </div>
+                        )}
                         {isSpeaking && (
                           <span className="absolute -bottom-1 -right-1 w-4 h-4 bg-[#23a55a] rounded-full border-2 border-[#313338] flex items-center justify-center">
                             <Volume2 className="w-2.5 h-2.5 text-white" />
@@ -1053,7 +1314,47 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
                     <div className="flex items-center gap-2 text-[#949ba4] flex-shrink-0">
                       {!p.isMicrophoneEnabled && <MicOff className="w-4 h-4 text-[#f23f43]" />}
-                      {p.isScreenShareEnabled && <Monitor className="w-4 h-4 text-[#5865f2] animate-pulse" />}
+                      
+                      {/* Ekran Paylaşımı Varsa Yayını İzle / Ayrıl Butonları */}
+                      {p.isScreenShareEnabled && (
+                        <div className="flex items-center gap-1">
+                          {isWatchingThisParticipant ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setIsWatchingStream(false);
+                                setSelectedTrack(null);
+                              }}
+                              className="px-2 py-0.5 bg-[#f23f43]/20 hover:bg-[#f23f43] text-[#f23f43] hover:text-white rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer"
+                              title="Bu yayını izlemeyi bırak"
+                            >
+                              <X className="w-3 h-3" />
+                              <span>Ayrıl</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const targetTrack = screenShareTracks.find(
+                                  (t) => t.participant.identity === p.identity
+                                );
+                                if (targetTrack) {
+                                  setWatchedTrackSid(targetTrack.publication?.trackSid || null);
+                                  setIsWatchingStream(true);
+                                  setSelectedTrack(null);
+                                }
+                              }}
+                              className="px-2 py-0.5 bg-[#5865f2]/20 hover:bg-[#5865f2] text-[#5865f2] hover:text-white rounded-md text-[10px] font-bold transition-all flex items-center gap-1 cursor-pointer animate-pulse"
+                              title="Bu kullanıcının ekran yayınını izle"
+                            >
+                              <Monitor className="w-3 h-3" />
+                              <span>İzle</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* Diğer Kullanıcıların Ses Düzeyi Popover Açma Butonu */}
                       {!isMe && (
@@ -1167,12 +1468,25 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     } catch {}
                   }
 
+                  const senderAvatar = getParticipantAvatar(msg.from);
+
                   return (
                     <div
                       key={idx}
                       className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}
                     >
                       <div className="flex items-center gap-1.5 mb-1 select-text">
+                        {senderAvatar ? (
+                          <img
+                            src={senderAvatar}
+                            alt={senderName}
+                            className="w-4 h-4 rounded-full object-cover flex-shrink-0 shadow-sm"
+                          />
+                        ) : (
+                          <div className="w-4 h-4 rounded-full bg-[#5865f2] text-[8px] text-white font-bold flex items-center justify-center flex-shrink-0">
+                            {senderName.slice(0, 1).toUpperCase()}
+                          </div>
+                        )}
                         <span className="text-[11px] font-bold text-white select-text">
                           {senderName}
                         </span>
@@ -1187,14 +1501,27 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                               : "bg-[#313338] text-[#f2f3f5] rounded-tl-none border border-[#1e1f22]"
                           }`}
                         >
-                          {/* Resim Önizleme (Varsa) */}
+                          {/* Resim Önizleme (Tıklanınca Lightbox Büyütme) */}
                           {fileMeta.isImage && fileMeta.thumbnail && (
-                            <div className="mb-2 max-w-[260px] rounded-lg overflow-hidden border border-black/20 bg-black/40">
+                            <div
+                              onClick={() =>
+                                setLightboxImage({
+                                  url: fileMeta!.thumbnail!,
+                                  name: fileMeta!.name,
+                                })
+                              }
+                              className="mb-2 max-w-[260px] rounded-lg overflow-hidden border border-black/20 bg-black/40 cursor-pointer group relative hover:opacity-95 transition-opacity"
+                              title="Büyütmek için tıklayın"
+                            >
                               <img
                                 src={fileMeta.thumbnail}
                                 alt={fileMeta.name}
                                 className="w-full h-auto max-h-[200px] object-contain rounded-lg"
                               />
+                              <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-semibold gap-1.5">
+                                <Maximize2 className="w-4 h-4" />
+                                <span>Büyüt</span>
+                              </div>
                             </div>
                           )}
 
@@ -1212,30 +1539,46 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                               <p className="text-[10px] opacity-75">{formatFileSize(fileMeta.size)} • P2P</p>
                             </div>
 
-                            {/* İndir Butonu */}
+                            {/* İndir ve İptal Butonları */}
                             {isMe ? (
                               <span className="text-[10px] font-semibold opacity-80 px-2 py-1 bg-white/10 rounded-md whitespace-nowrap">
                                 Paylaşıldı
                               </span>
                             ) : (
-                              <button
-                                type="button"
-                                disabled={downloadingFileId === fileMeta.id}
-                                onClick={() => handleDownloadFile(fileMeta!)}
-                                className="px-2.5 py-1.5 bg-[#23a55a] hover:bg-[#1f934f] text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50 flex-shrink-0"
-                              >
-                                {downloadingFileId === fileMeta.id ? (
-                                  <>
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                    <span>%{downloadProgress[fileMeta.id] || 0}</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <Download className="w-3.5 h-3.5" />
-                                    <span>İndir</span>
-                                  </>
+                              <div className="flex items-center gap-1.5 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  disabled={downloadingFileId === fileMeta.id}
+                                  onClick={() => handleDownloadFile(fileMeta!)}
+                                  className="px-2.5 py-1.5 bg-[#23a55a] hover:bg-[#1f934f] text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50"
+                                >
+                                  {downloadingFileId === fileMeta.id ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      <span>%{downloadProgress[fileMeta.id] || 0}</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Download className="w-3.5 h-3.5" />
+                                      <span>İndir</span>
+                                    </>
+                                  )}
+                                </button>
+
+                                {/* İndirmeyi İptal Et Butonu */}
+                                {downloadingFileId === fileMeta.id && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCancelDownload(fileMeta!.id, fileMeta!.senderIdentity)
+                                    }
+                                    className="p-1.5 bg-[#f23f43]/20 hover:bg-[#f23f43] text-[#f23f43] hover:text-white rounded-lg transition-all cursor-pointer"
+                                    title="İndirmeyi İptal Et"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
                                 )}
-                              </button>
+                              </div>
                             )}
                           </div>
 
@@ -1309,11 +1652,23 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
       {/* ALT KONTROL BARI */}
       <footer className="h-20 bg-[#2b2d31] border-t border-[#1e1f22] px-6 flex items-center justify-between z-20">
-        {/* Left identity info */}
+        {/* Left identity info & Avatar Değiştir Butonu */}
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-[#5865f2] rounded-xl flex items-center justify-center text-white font-bold">
-            {username.slice(0, 2).toUpperCase()}
-          </div>
+          <button
+            type="button"
+            onClick={() => setAvatarModalOpen(true)}
+            className="relative w-10 h-10 rounded-xl bg-[#5865f2] flex items-center justify-center text-white font-bold cursor-pointer hover:ring-2 hover:ring-[#5865f2] group overflow-hidden shadow flex-shrink-0"
+            title="Profil Avatarını Değiştir"
+          >
+            {roomAvatar ? (
+              <img src={roomAvatar} alt="Avatar" className="w-full h-full object-cover" />
+            ) : (
+              username.slice(0, 2).toUpperCase()
+            )}
+            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+              <Camera className="w-3.5 h-3.5 text-white" />
+            </div>
+          </button>
           <div>
             <p className="text-sm font-bold text-white">{username}</p>
             <p className="text-xs text-[#23a55a]">Bağlandı</p>
@@ -1444,6 +1799,30 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
             {/* Modal Body */}
             <div className="p-6 flex flex-col gap-5 max-h-[75vh] overflow-y-auto">
+              {/* Profil Avatarı Tercihi */}
+              <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl bg-[#5865f2] flex items-center justify-center text-white font-bold overflow-hidden shadow">
+                    {roomAvatar ? (
+                      <img src={roomAvatar} alt="Avatar" className="w-full h-full object-cover" />
+                    ) : (
+                      username.slice(0, 2).toUpperCase()
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white">Profil Avatarınız</h3>
+                    <p className="text-xs text-[#949ba4]">Avatarınızı değiştirin veya bilgisayarınızdan yeni görsel yükleyin</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAvatarModalOpen(true)}
+                  className="px-3.5 py-2 bg-[#313338] hover:bg-[#35373c] text-white text-xs font-semibold rounded-xl border border-[#404249] transition-all cursor-pointer"
+                >
+                  Değiştir
+                </button>
+              </div>
+
               {/* 0. Giriş ve Çıkış Aygıtı Seçimi (Mikrofon & Hoparlör) */}
               <div className="bg-[#1e1f22] p-4 rounded-xl border border-[#313338] flex flex-col gap-3">
                 <div className="flex items-center gap-2 text-white font-bold text-sm">
@@ -1707,6 +2086,138 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
           </div>
         </div>
       )}
+
+      {/* GÖRSEL BÜYÜTME (LIGHTBOX) MODALI */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setLightboxImage(null)}
+        >
+          {/* Üst İşlem Butonları */}
+          <div
+            className="absolute top-4 right-4 flex items-center gap-3 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <a
+              href={lightboxImage.url}
+              download={lightboxImage.name}
+              className="px-3.5 py-2 bg-[#23a55a] hover:bg-[#1f934f] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg"
+            >
+              <Download className="w-4 h-4" />
+              <span>Görseli İndir</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => setLightboxImage(null)}
+              className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all cursor-pointer"
+              title="Kapat (Esc)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Orijinal Oranlı Görsel Gövdesi */}
+          <div
+            className="max-w-[90vw] max-h-[85vh] flex items-center justify-center overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage.url}
+              alt={lightboxImage.name}
+              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border border-white/10"
+            />
+          </div>
+          <p className="text-xs text-[#949ba4] mt-3 truncate max-w-md text-center">
+            {lightboxImage.name}
+          </p>
+        </div>
+      )}
+
+      {/* ODA İÇİ AVATAR DEĞİŞTİRME / YÜKLEME MODALI */}
+      {avatarModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-[#2b2d31] border border-[#383a40] rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-4 bg-[#1e1f22] border-b border-[#313338] flex items-center justify-between">
+              <div className="flex items-center gap-2 text-white font-bold text-sm">
+                <Smile className="w-4 h-4 text-[#5865f2]" />
+                <span>Avatarını Seç veya Yükle</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAvatarModalOpen(false)}
+                className="p-1 rounded-lg text-[#949ba4] hover:text-white hover:bg-[#313338]"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4">
+              {/* Bilgisayardan Fotoğraf Yükle Butonu */}
+              <div>
+                <input
+                  type="file"
+                  ref={roomAvatarInputRef}
+                  accept="image/*"
+                  onChange={handleRoomCustomAvatarUpload}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => roomAvatarInputRef.current?.click()}
+                  className="w-full py-3 px-4 bg-[#1e1f22] hover:bg-[#35373c] border border-dashed border-[#5865f2] rounded-xl text-xs font-semibold text-white flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm group"
+                >
+                  <Upload className="w-4 h-4 text-[#5865f2] group-hover:scale-110 transition-transform" />
+                  <span>Bilgisayardan Fotoğraf Yükle</span>
+                </button>
+                <p className="text-[10px] text-[#949ba4] text-center mt-1">
+                  PNG, JPG veya WebP (Otomatik kare optimize edilir ve hatırlanır)
+                </p>
+              </div>
+
+              <div className="text-[11px] font-bold text-[#949ba4] uppercase tracking-wider">
+                Hazır Avatarlar
+              </div>
+
+              {/* Hazır Avatar Izgarası */}
+              <div className="grid grid-cols-3 gap-3">
+                {PRESET_AVATARS.map((av) => (
+                  <button
+                    key={av.id}
+                    type="button"
+                    onClick={() => handleUpdateRoomAvatar(av.url)}
+                    className={`relative p-2 rounded-xl bg-[#1e1f22] border transition-all hover:scale-105 flex flex-col items-center gap-1.5 cursor-pointer ${
+                      roomAvatar === av.url
+                        ? "border-[#5865f2] ring-2 ring-[#5865f2]/40"
+                        : "border-[#313338] hover:border-gray-500"
+                    }`}
+                  >
+                    <img src={av.url} alt={av.name} className="w-12 h-12 rounded-lg" />
+                    <span className="text-[10px] text-[#949ba4] font-medium truncate w-full text-center">
+                      {av.name}
+                    </span>
+                    {roomAvatar === av.url && (
+                      <span className="absolute top-1 right-1 w-4 h-4 bg-[#5865f2] rounded-full flex items-center justify-center shadow">
+                        <Check className="w-2.5 h-2.5 text-white" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Avatarı Sıfırla / Kaldır */}
+              {roomAvatar && (
+                <button
+                  type="button"
+                  onClick={handleRemoveRoomAvatar}
+                  className="w-full py-2 text-xs text-[#f23f43] hover:underline font-medium text-center"
+                >
+                  Avatarı Kaldır (Varsayılan Harfe Dön)
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1809,6 +2320,8 @@ function RoomContainer() {
       options={{
         publishDefaults: {
           simulcast: true,
+          videoCodec: "av1",
+          backupCodec: true,
         },
         adaptiveStream: true,
         dynacast: true,

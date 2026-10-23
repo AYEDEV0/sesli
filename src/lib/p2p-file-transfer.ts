@@ -19,7 +19,12 @@ export interface SharedFileMeta {
 // Gönderilen yerel dosyaların bellekteki önbelleği
 const localFilesStore = new Map<string, File>();
 
-export function registerLocalFile(file: File, senderIdentity: string, senderName: string, thumbnail?: string): SharedFileMeta {
+export function registerLocalFile(
+  file: File,
+  senderIdentity: string,
+  senderName: string,
+  thumbnail?: string
+): SharedFileMeta {
   const id = `file_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
   localFilesStore.set(id, file);
 
@@ -101,6 +106,7 @@ const ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
   ],
 };
 
@@ -108,6 +114,10 @@ const CHUNK_SIZE = 64 * 1024; // 64 KB per WebRTC packet
 
 export class P2PTransferManager {
   private activePeerConnections = new Map<string, RTCPeerConnection>();
+  private activeDataChannels = new Map<string, RTCDataChannel>();
+  private pendingCandidates = new Map<string, RTCIceCandidateInit[]>();
+  private activeWatchdogs = new Map<string, NodeJS.Timeout>();
+  private isCancelledMap = new Map<string, boolean>();
 
   constructor(
     private sendSignal: (targetIdentity: string, payload: any) => void
@@ -122,10 +132,45 @@ export class P2PTransferManager {
     onComplete: () => void,
     onError: (err: string) => void
   ) {
+    this.isCancelledMap.set(fileMeta.id, false);
+
+    // 1. Durum: Dosya yerel bellekte mevcutsa (kullanıcı kendi dosyasını indiriyorsa veya aynı sekmedeyse)
+    const local = getLocalFile(fileMeta.id);
+    if (local) {
+      try {
+        const blobUrl = URL.createObjectURL(local);
+        const a = document.createElement("a");
+        a.href = blobUrl;
+        a.download = fileMeta.name;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        onProgress(100);
+        onComplete();
+        return;
+      } catch (err: any) {
+        console.warn("[P2P] Yerel dosya indirme hatası:", err);
+      }
+    }
+
     const connectionKey = `${fileMeta.id}_${fileMeta.senderIdentity}`;
     try {
+      // Varsa eski bağlantıyı temizle
+      this.closeConnection(connectionKey);
+
       const pc = new RTCPeerConnection(ICE_SERVERS);
       this.activePeerConnections.set(connectionKey, pc);
+      this.pendingCandidates.set(connectionKey, []);
+
+      // 15 saniye zaman aşımı kontrolü
+      const watchdog = setTimeout(() => {
+        if (!this.isCancelledMap.get(fileMeta.id)) {
+          onError("P2P dosya aktarımı zaman aşımına uğradı. Karşı taraf çevrimdışı olabilir.");
+          this.closeConnection(connectionKey);
+        }
+      }, 15000);
+      this.activeWatchdogs.set(fileMeta.id, watchdog);
 
       pc.onicecandidate = (e) => {
         if (e.candidate) {
@@ -142,14 +187,23 @@ export class P2PTransferManager {
 
       pc.ondatachannel = (event) => {
         const channel = event.channel;
+        this.activeDataChannels.set(connectionKey, channel);
         channel.binaryType = "arraybuffer";
 
         channel.onmessage = (msgEvent) => {
+          if (this.isCancelledMap.get(fileMeta.id)) {
+            this.closeConnection(connectionKey);
+            return;
+          }
+
           if (typeof msgEvent.data === "string") {
             try {
               const meta = JSON.parse(msgEvent.data);
               if (meta.type === "EOF") {
-                const blob = new Blob(receivedChunks, { type: fileMeta.type || "application/octet-stream" });
+                this.clearWatchdog(fileMeta.id);
+                const blob = new Blob(receivedChunks, {
+                  type: fileMeta.type || "application/octet-stream",
+                });
                 const blobUrl = URL.createObjectURL(blob);
                 const a = document.createElement("a");
                 a.href = blobUrl;
@@ -159,9 +213,13 @@ export class P2PTransferManager {
                 document.body.removeChild(a);
 
                 setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+                onProgress(100);
                 onComplete();
-                pc.close();
-                this.activePeerConnections.delete(connectionKey);
+                this.closeConnection(connectionKey);
+              } else if (meta.type === "P2P_CANCEL") {
+                this.clearWatchdog(fileMeta.id);
+                onError("İndirme karşı tarafça iptal edildi.");
+                this.closeConnection(connectionKey);
               }
             } catch {
               // ignore
@@ -169,6 +227,8 @@ export class P2PTransferManager {
             return;
           }
 
+          // Gelen binary chunk'ları topla
+          this.clearWatchdog(fileMeta.id); // İlk paket geldiğinde watchdog'u temizle
           receivedChunks.push(msgEvent.data);
           receivedBytes += msgEvent.data.byteLength;
           const progress = Math.min(100, Math.round((receivedBytes / fileMeta.size) * 100));
@@ -176,18 +236,24 @@ export class P2PTransferManager {
         };
 
         channel.onerror = () => {
-          onError("P2P veri aktarımı sırasında bağlantı koptu.");
-          pc.close();
-          this.activePeerConnections.delete(connectionKey);
+          if (!this.isCancelledMap.get(fileMeta.id)) {
+            onError("P2P veri aktarımı sırasında bağlantı koptu.");
+          }
+          this.closeConnection(connectionKey);
+        };
+
+        channel.onclose = () => {
+          this.closeConnection(connectionKey);
         };
       };
 
-      // 1. Göndericiye dosya istek sinyali at
+      // 1. Göndericiye dosya istek sinyali ilet
       this.sendSignal(fileMeta.senderIdentity, {
         type: "P2P_FILE_REQUEST",
         fileId: fileMeta.id,
       });
     } catch (err: any) {
+      this.clearWatchdog(fileMeta.id);
       onError(err?.message || "P2P bağlantısı kurulamadı.");
     }
   }
@@ -200,8 +266,12 @@ export class P2PTransferManager {
     if (!file) return;
 
     const connectionKey = `${fileId}_${requesterIdentity}`;
+    this.closeConnection(connectionKey);
+    this.isCancelledMap.set(fileId, false);
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.activePeerConnections.set(connectionKey, pc);
+    this.pendingCandidates.set(connectionKey, []);
 
     pc.onicecandidate = (e) => {
       if (e.candidate) {
@@ -216,6 +286,7 @@ export class P2PTransferManager {
     const dataChannel = pc.createDataChannel("voxa-file-transfer", {
       ordered: true,
     });
+    this.activeDataChannels.set(connectionKey, dataChannel);
     dataChannel.binaryType = "arraybuffer";
 
     dataChannel.onopen = () => {
@@ -223,18 +294,34 @@ export class P2PTransferManager {
       dataChannel.bufferedAmountLowThreshold = 8 * CHUNK_SIZE;
 
       const sendNextSlice = () => {
-        if (offset >= file.size) {
-          dataChannel.send(JSON.stringify({ type: "EOF" }));
+        if (this.isCancelledMap.get(fileId)) {
+          this.closeConnection(connectionKey);
           return;
         }
 
-        while (offset < file.size && dataChannel.bufferedAmount <= dataChannel.bufferedAmountLowThreshold) {
+        if (offset >= file.size) {
+          try {
+            dataChannel.send(JSON.stringify({ type: "EOF" }));
+          } catch {}
+          return;
+        }
+
+        while (
+          offset < file.size &&
+          dataChannel.bufferedAmount <= dataChannel.bufferedAmountLowThreshold
+        ) {
+          if (this.isCancelledMap.get(fileId) || dataChannel.readyState !== "open") {
+            return;
+          }
+
           const slice = file.slice(offset, offset + CHUNK_SIZE);
           const reader = new FileReader();
           reader.onload = (e) => {
             if (dataChannel.readyState !== "open") return;
-            const buffer = e.target?.result as ArrayBuffer;
-            dataChannel.send(buffer);
+            try {
+              const buffer = e.target?.result as ArrayBuffer;
+              dataChannel.send(buffer);
+            } catch {}
           };
           reader.readAsArrayBuffer(slice);
           offset += CHUNK_SIZE;
@@ -251,6 +338,18 @@ export class P2PTransferManager {
       sendNextSlice();
     };
 
+    dataChannel.onmessage = (e) => {
+      if (typeof e.data === "string") {
+        try {
+          const parsed = JSON.parse(e.data);
+          if (parsed.type === "P2P_CANCEL") {
+            this.isCancelledMap.set(fileId, true);
+            this.closeConnection(connectionKey);
+          }
+        } catch {}
+      }
+    };
+
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
@@ -262,7 +361,7 @@ export class P2PTransferManager {
   }
 
   /**
-   * Alıcı: Gelen Offer'ı kabul edip Answer üretir.
+   * Alıcı: Gelen Offer'ı kabul edip Answer üretir ve bekleyen ICE adaylarını ekler.
    */
   async handleOffer(fileId: string, senderIdentity: string, sdp: RTCSessionDescriptionInit) {
     const connectionKey = `${fileId}_${senderIdentity}`;
@@ -270,6 +369,10 @@ export class P2PTransferManager {
     if (!pc) return;
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Bekleyen ICE adaylarını ekle
+    await this.flushPendingCandidates(connectionKey, pc);
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -281,7 +384,7 @@ export class P2PTransferManager {
   }
 
   /**
-   * Gönderici: Alıcıdan gelen Answer'ı set eder.
+   * Gönderici: Alıcıdan gelen Answer'ı set eder ve bekleyen ICE adaylarını ekler.
    */
   async handleAnswer(fileId: string, requesterIdentity: string, sdp: RTCSessionDescriptionInit) {
     const connectionKey = `${fileId}_${requesterIdentity}`;
@@ -289,25 +392,128 @@ export class P2PTransferManager {
     if (!pc) return;
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+
+    // Bekleyen ICE adaylarını ekle
+    await this.flushPendingCandidates(connectionKey, pc);
   }
 
   /**
-   * ICE Candidate sinyallerini eşler.
+   * ICE Candidate sinyallerini işler. Remote description henüz hazır değilse kuyruğa alır.
    */
   async handleCandidate(fileId: string, peerIdentity: string, candidate: RTCIceCandidateInit) {
     const connectionKey = `${fileId}_${peerIdentity}`;
     const pc = this.activePeerConnections.get(connectionKey);
     if (!pc) return;
 
+    if (!pc.remoteDescription) {
+      const queue = this.pendingCandidates.get(connectionKey) || [];
+      queue.push(candidate);
+      this.pendingCandidates.set(connectionKey, queue);
+      return;
+    }
+
     try {
       await pc.addIceCandidate(new RTCIceCandidate(candidate));
-    } catch {
-      // ignore
+    } catch (e) {
+      console.warn("[P2P] ICE adayı eklenirken hata:", e);
     }
   }
 
+  /**
+   * Bir transferi anında iptal eder.
+   */
+  cancelTransfer(fileId: string, peerIdentity?: string) {
+    this.isCancelledMap.set(fileId, true);
+    this.clearWatchdog(fileId);
+
+    // Varsa karşı tarafa iptal sinyali gönder
+    if (peerIdentity) {
+      this.sendSignal(peerIdentity, {
+        type: "P2P_CANCEL",
+        fileId,
+      });
+    }
+
+    // Bu fileId ile başlayan tüm aktif bağlantıları kapat
+    this.activePeerConnections.forEach((pc, key) => {
+      if (key.startsWith(`${fileId}_`)) {
+        try {
+          const dc = this.activeDataChannels.get(key);
+          if (dc && dc.readyState === "open") {
+            dc.send(JSON.stringify({ type: "P2P_CANCEL", fileId }));
+          }
+        } catch {}
+        this.closeConnection(key);
+      }
+    });
+  }
+
+  /**
+   * Karşı taraftan gelen iptal sinyalini işler.
+   */
+  handleCancelSignal(fileId: string, peerIdentity: string) {
+    this.isCancelledMap.set(fileId, true);
+    this.clearWatchdog(fileId);
+    const connectionKey = `${fileId}_${peerIdentity}`;
+    this.closeConnection(connectionKey);
+  }
+
+  private async flushPendingCandidates(connectionKey: string, pc: RTCPeerConnection) {
+    const queued = this.pendingCandidates.get(connectionKey) || [];
+    for (const c of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      } catch (err) {
+        console.warn("[P2P] Kuyruktaki ICE adayı işlenemedi:", err);
+      }
+    }
+    this.pendingCandidates.set(connectionKey, []);
+  }
+
+  private clearWatchdog(fileId: string) {
+    const wd = this.activeWatchdogs.get(fileId);
+    if (wd) {
+      clearTimeout(wd);
+      this.activeWatchdogs.delete(fileId);
+    }
+  }
+
+  private closeConnection(connectionKey: string) {
+    const dc = this.activeDataChannels.get(connectionKey);
+    if (dc) {
+      try {
+        dc.close();
+      } catch {}
+      this.activeDataChannels.delete(connectionKey);
+    }
+
+    const pc = this.activePeerConnections.get(connectionKey);
+    if (pc) {
+      try {
+        pc.close();
+      } catch {}
+      this.activePeerConnections.delete(connectionKey);
+    }
+
+    this.pendingCandidates.delete(connectionKey);
+  }
+
   cleanup() {
-    this.activePeerConnections.forEach((pc) => pc.close());
+    this.activeWatchdogs.forEach((wd) => clearTimeout(wd));
+    this.activeWatchdogs.clear();
+    this.activeDataChannels.forEach((dc) => {
+      try {
+        dc.close();
+      } catch {}
+    });
+    this.activeDataChannels.clear();
+    this.activePeerConnections.forEach((pc) => {
+      try {
+        pc.close();
+      } catch {}
+    });
     this.activePeerConnections.clear();
+    this.pendingCandidates.clear();
+    this.isCancelledMap.clear();
   }
 }
