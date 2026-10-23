@@ -45,19 +45,33 @@ function createWindow() {
     }
   });
 
+let pendingDesktopSourceId = null;
+
+// IPC Handler: Kullanıcının Seçtiği Masaüstü Ekran veya Pencere Kaynağını Kaydetme
+ipcMain.handle("select-desktop-source", async (event, sourceId) => {
+  pendingDesktopSourceId = sourceId;
+  return true;
+});
+
   // Display Media (Ekran Paylaşımı) İşleyicisi - Electron ortamında getDisplayMedia çağrısını aktifleştirir
   session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
     desktopCapturer
       .getSources({ types: ["screen", "window"] })
       .then((sources) => {
         if (sources.length > 0) {
-          // Windows'ta sistem ses aktarımı (loopback) "screen" türündeki kaynaklarda çalışır.
-          const screenSource = sources.find((s) => s.id.startsWith("screen:")) || sources[0];
-          const isScreenSource = screenSource.id.startsWith("screen:");
-          
+          let chosenSource = null;
+          if (pendingDesktopSourceId) {
+            chosenSource = sources.find((s) => s.id === pendingDesktopSourceId);
+          }
+          if (!chosenSource) {
+            chosenSource = sources.find((s) => s.id.startsWith("screen:")) || sources[0];
+          }
+          pendingDesktopSourceId = null;
+
+          // Hem tam ekran hem de belirli uygulama/pencerelerde Windows loopback sesini eksiksiz aktar
           callback({
-            video: screenSource,
-            audio: isScreenSource ? "loopback" : undefined,
+            video: chosenSource,
+            audio: "loopback",
           });
         } else {
           callback(null);

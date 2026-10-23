@@ -648,7 +648,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   // Ekran paylaşımı ses track'ini bul (izlenen yayına ait ses)
   const activeScreenShareAudio = screenShareAudioTracks.find((t) => {
-    if (t.source !== Track.Source.ScreenShareAudio || t.publication?.isSubscribed === false) {
+    if (t.source !== Track.Source.ScreenShareAudio) {
       return false;
     }
     if (activeScreenShare) {
@@ -663,9 +663,22 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   // Ekran Sesini Doğrudan HTMLAudioElement İle Güvenli Çalma ve Ses Ayarı
   useEffect(() => {
     const audioTrackPub = activeScreenShareAudio?.publication;
-    const audioTrack = audioTrackPub?.track as RemoteAudioTrack | undefined;
     const audioEl = screenShareAudioElRef.current;
+    const isLocal = activeScreenShareAudio?.participant?.isLocal;
 
+    // Yayın açan kişi kendi ekran sesini tekrar duymamalı (yankı/çift ses engelleme)
+    if (isLocal) return;
+
+    // Abonelik henüz tamamlanmamışsa abone olmaya zorla
+    if (audioTrackPub && !audioTrackPub.isSubscribed && typeof (audioTrackPub as any).setSubscribed === "function") {
+      try {
+        (audioTrackPub as any).setSubscribed(true);
+      } catch (err) {
+        console.warn("Ekran sesi abone olma hatası:", err);
+      }
+    }
+
+    const audioTrack = audioTrackPub?.track as RemoteAudioTrack | undefined;
     if (!audioTrack || !audioEl) return;
 
     if (!isWatchingStream) {
@@ -707,6 +720,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     };
   }, [
     activeScreenShareAudio,
+    activeScreenShareAudio?.publication?.track,
+    activeScreenShareAudio?.publication?.isSubscribed,
     screenAudioVolume,
     isScreenAudioMuted,
     isWatchingStream,
@@ -2207,8 +2222,15 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               {desktopSources.map((src) => (
                 <div
                   key={src.id}
-                  onClick={() => {
+                  onClick={async () => {
                     setDesktopPickerOpen(false);
+                    if ((window as any).electronAPI?.selectDesktopSource) {
+                      try {
+                        await (window as any).electronAPI.selectDesktopSource(src.id);
+                      } catch (e) {
+                        console.warn("Kaynak seçim hatası:", e);
+                      }
+                    }
                     toggleScreenShare();
                   }}
                   className="bg-[#1e1f22] border border-[#313338] hover:border-[#5865f2] rounded-xl p-2.5 flex flex-col gap-2 cursor-pointer transition-all hover:scale-[1.02] group shadow"
