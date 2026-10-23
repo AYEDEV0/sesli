@@ -50,10 +50,19 @@ export function getLiveKitAccounts(): LiveKitAccount[] {
 
   // 2. Eğer numaralandırılmış bulunamazsa varsayılan tekil env'leri yükle
   if (accounts.length === 0) {
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
-    const isExhaustedEnv = process.env.LIVEKIT_EXHAUSTED === "true";
+    const rawApiKey = process.env.LIVEKIT_API_KEY;
+    const rawApiSecret = process.env.LIVEKIT_API_SECRET;
+    const rawWsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+
+    const apiKey = clean(rawApiKey);
+    const apiSecret = clean(rawApiSecret);
+    const wsUrl = clean(rawWsUrl);
+
+    const isExhaustedEnv =
+      clean(process.env.LIVEKIT_EXHAUSTED) === "true" ||
+      clean(process.env.LIVEKIT_EXHAUSTED_1) === "true" ||
+      apiKey === "APIMeQAiA25GGbH" ||
+      wsUrl.includes("sesli-rq0ve8k0");
 
     if (apiKey && apiSecret && wsUrl) {
       const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
