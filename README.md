@@ -177,13 +177,40 @@ Gelecekte projeye devam ederken aşağıdaki sıralamayla geliştirmeler yapıla
   - LiveKit Server SDK `RoomServiceClient.mutePublishedTrack(room, identity, trackSid, true)` ve `RoomServiceClient.removeParticipant(room, identity)` fonksiyonları kullanılır.
   - Katılımcı kartına yöneticiye özel "Sustur" ve "Odadan Çıkar" menüsü eklenir.
 
-### 5. 🎨 Özel Tema Seçenekleri ve Profil Özelleştirme
-- **Amaç:** Kullanıcıların avatar seçebilmesi, renk paletleri (Cyberpunk Neon, Midnight Dark, Emerald) arasında geçiş yapabilmesi.
+### 5. 👤 Kullanıcı Avatar Sistemi & Profil Kartları (Avatar System)
+- **Amaç:** Kullanıcıların giriş ekranında veya görüşme sırasında kendine özel bir avatar (anime, 3D, minimalist ikonlar veya yerel görsel) seçebilmesi; bu avatarın hem oda katılımcı kartında hem de sohbette mesajların yanında görünmesi.
 - **Uygulama Yöntemi:**
-  - `localStorage`'da seçilen avatar ve renk teması saklanır; LiveKit participant metadata'sına JSON olarak basılır: `{ avatarId: 'cat', theme: 'neon' }`.
-  - Odadaki herkes diğerinin özel avatarını görür.
+  - Ana sayfada rumuz kutusunun yanına **Avatar Seçici (Avatar Picker)** galerisi eklenir (SVG / DiceBear veya yerel ikon havuzu).
+  - Seçilen avatar `localStorage.setItem('voxa_avatar', avatarId)` ile kaydedilir.
+  - Odaya girerken LiveKit Token metadata'sına veya `room.localParticipant.setMetadata(JSON.stringify({ avatar: avatarId }))` ile odaya yayınlanır.
+  - Sol taraftaki katılımcı kartlarında ve sohbet balonlarında kullanıcı baş harfi yerine bu avatar gösterilir.
 
-### 6. 🔒 Uçtan Uca Şifreleme (E2EE)
+### 6. 🔍 Sohbette Görsellere Tıklayınca Büyütme (Lightbox / Fullscreen Preview Modal)
+- **Amaç:** Sohbet akışında paylaşılan küçük resimlere (thumbnails) tıklandığında ekranı kaplayan karartmalı bir Lightbox modalında görseli tam boyutta ve orijinal en-boy oranıyla inceleyebilme.
+- **Uygulama Yöntemi:**
+  - `src/app/[roomName]/page.tsx` içerisine `activePreviewImage: string | null` state'i eklenir.
+  - Sohbetteki resim kartına tıklandığında (`onClick={() => setActivePreviewImage(msg.thumbnail)}`) tam ekran modal tetiklenir:
+    - Esc tuşu veya modal dışına tıklama ile kapatma.
+    - Orijinal resmi yeni sekmede açma veya tek tıkla doğrudan bilgisayara kaydetme butonu.
+    - İnceleme esnasında zoom/scale kontrolleri.
+
+### 7. 🛑 P2P Dosya İndirmesini İptal Etme (Cancel Ongoing Download)
+- **Amaç:** Kullanıcı büyük boyutlu bir dosyayı indirmeye başladıktan sonra vazgeçerse devam eden transferi durdurup bağlantıyı kapatabilmeli.
+- **Uygulama Yöntemi:**
+  - `src/lib/p2p-file-transfer.ts` içine `cancelTransfer(fileId: string)` fonksiyonu eklenir.
+  - Alıcı indirme ilerleme çubuğunun yanına bir **"İptal Et (X)"** butonu yerleştirilir.
+  - İptale basıldığında:
+    - Gönderici tarafa LiveKit üzerinden `{ type: "p2p-cancel", fileId }` sinyali iletilir.
+    - WebRTC `RTCDataChannel` ve `RTCPeerConnection` kapatılır (`pc.close()`).
+    - Alıcının RAM'indeki `receivedChunks` dizisi sıfırlanarak bellek serbest bırakılır.
+    - Arayüzde "İndirme İptal Edildi" bildirimi gösterilir.
+
+### 8. 🎨 Özel Tema Seçenekleri (Cyberpunk Neon, Midnight Dark, Emerald)
+- **Amaç:** Kullanıcıların sohbet ve oda arayüzü renk paletini kişiselleştirebilmesi.
+- **Uygulama Yöntemi:**
+  - CSS değişkenleri tabanlı tema motoru (`--bg-primary`, `--accent-glow`).
+
+### 9. 🔒 Uçtan Uca Şifreleme (E2EE)
 - **Amaç:** Ses ve video paketlerinin LiveKit sunucusu tarafından bile çözülemeyeceği sıfır bilgi (Zero-Knowledge) şifreleme.
 - **Uygulama Yöntemi:**
   - `@livekit/client` kütüphanesinin yerleşik `E2EEOptions` ve Web Worker tabanlı Cryptor altyapısı aktifleştirilir.
