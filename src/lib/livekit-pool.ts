@@ -29,9 +29,7 @@ export function getLiveKitAccounts(): LiveKitAccount[] {
   const u1 = clean(process.env.LIVEKIT_URL_1 || process.env.NEXT_PUBLIC_LIVEKIT_URL_1 || process.env.NEXT_PUBLIC_LIVEKIT_URL);
   const isDead1 =
     clean(process.env.LIVEKIT_EXHAUSTED_1) === "true" ||
-    clean(process.env.LIVEKIT_EXHAUSTED) === "true" ||
-    k1 === "APIMeQAiA25GGbH" ||
-    u1.includes("sesli-rq0ve8k0");
+    clean(process.env.LIVEKIT_EXHAUSTED) === "true";
 
   if (k1 && s1 && u1) {
     accounts.push({

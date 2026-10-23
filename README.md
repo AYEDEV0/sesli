@@ -1,15 +1,17 @@
 # 🎙️ Voxa - Yapay Zekâ Destekli Sesli Görüşme ve Ekran Paylaşım Platformu
 
-**Voxa**, Next.js 14, LiveKit, Krisp AI ve Electron altyapısı kullanılarak geliştirilmiş; tarayıcı (Web) ve Masaüstü Uygulaması (`.exe`) üzerinden kesintisiz sesli görüşme, HD/2K 60 FPS ekran & uygulama yayıncılığı, sistem sesi aktarımı, oda kilitleme, kişi bazlı bağımsız ses kontrolü, AI gürültü engelleme ve anlık mesajlaşma sunan modern bir hibrit iletişim platformudur.
+**Voxa**, Next.js 14, LiveKit Cloud, Krisp AI ve Electron altyapısı kullanılarak geliştirilmiş; modern tarayıcılar (Web) ve Masaüstü Uygulaması (`.exe`) üzerinden kesintisiz sesli görüşme, HD/2K 60 FPS ekran & uygulama yayıncılığı, sistem sesi aktarımı, oda kilitleme, kişi bazlı bağımsız ses kontrolü, AI gürültü engelleme, 0-bayt sunucu maliyetli P2P dosya/görsel transferi ve anlık mesajlaşma sunan yeni nesil hibrit iletişim platformudur.
 
 ---
 
 ## 📌 Projenin Amacı ve Temel Odak Noktaları
 
-- **Hızlı ve Üyeliksiz Katılım:** Kullanıcıların karmaşık kayıt süreçleriyle uğraşmadan yalnızca Rumuz (Kullanıcı Adı) ve Oda İsmi ile anında sesli kanallara katılabilmesi.
-- **Yapay Zekâ Gürültü Engelleme (Krisp AI):** Görüşme esnasındaki arka plan gürültülerini, klavye seslerini, fan gürültüsünü ve yankıyı tarayıcı/uygulama tarafında (WebAssembly) otomatik olarak filtreleme.
-- **2K 60 FPS Ekran Paylaşımı & Sistem Sesi:** 720p, 1080p ve 2K (1440p 60 FPS) çözünürlüğe kadar yüksek kaliteli ekran/pencere paylaşımı ve oyun/sistem sesi yayınlama (Desktop Loopback).
-- **Discord Tarzı Masaüstü Uygulaması (Electron v44):** Engelsiz masaüstü deneyimi, otomatik pencere seçici modalı, sistem genelinde ses yakalama ve panoya güvenli kopya alma desteği.
+- **Hızlı ve Üyeliksiz Katılım:** Kullanıcıların hesap oluşturma veya karmaşık kayıt süreçleriyle uğraşmadan yalnızca Rumuz (Kullanıcı Adı) ve Oda İsmi ile anında sesli kanallara katılabilmesi.
+- **Kesintisiz Çoklu API Havuzu:** Ücretsiz LiveKit kotalarının (100 GB / ay) aniden tükenmesini önleyen çoklu hesap havuzu ve oda bazlı sabitleme (Room Pinning) mimarisi.
+- **0 Bayt Sunucu Maliyetli P2P Dosya Transferi:** Sohbet üzerinden paylaşılan dosyaların ve resimlerin LiveKit veya barındırma sunucusuna yük bindirmeden doğrudan WebRTC DataChannel üzerinden aktarılması.
+- **Yapay Zekâ Gürültü Engelleme (Krisp AI):** Arka plan gürültülerini, klavye seslerini, fan gürültüsünü ve yankıyı WebAssembly ortamında otomatik olarak filtreleme.
+- **2K 60 FPS Ekran Paylaşımı & Sistem Sesi:** 720p, 1080p ve 2K (1440p 60 FPS) çözünürlüğe kadar yüksek kaliteli ekran/pencere yayını ve oyun/sistem sesi aktarımı (Desktop Audio Loopback).
+- **Discord Tarzı Masaüstü Uygulaması (Electron v44):** Engelsiz masaüstü deneyimi, pencere seçici modalı, sistem genelinde ses yakalama ve panoya güvenli kopya alma desteği.
 - **Kişiselleştirilmiş Ses Kontrolü:** Odadaki diğer katılımcıların ses seviyelerini bağımsız olarak (%0 - %200) kısabilme, artırabilme veya bireysel sessize alma (Mute).
 - **Güvenli Oda Kilitleme (Room Lock):** Odadaki katılımcıların tek tıkla odayı kilitleyebilmesi ve kilitli odalara dışarıdan yetkisiz katılımı API seviyesinde engelleme.
 - **Otomatik Güncelleme (Auto-Updater) & CI/CD Pipeline:** GitHub Actions ile otomatik derleme (`.exe`), GitHub Releases üzerinde versiyon yayınlama ve masaüstü uygulamasının kendini otomatik güncelleyebilmesi.
@@ -25,79 +27,172 @@
 | **Programlama Dili**      | TypeScript, JavaScript (ES6+)                                                         |
 | **Stil & Tasarım**        | Tailwind CSS, Lucide Icons, Custom CSS, Glassmorphism                                 |
 | **Canlı Medya Altyapısı** | LiveKit Web SDK (`@livekit/components-react`, `livekit-client`, `livekit-server-sdk`) |
+| **P2P Dosya Transferi**   | WebRTC `RTCPeerConnection`, `RTCDataChannel`, Google STUN                             |
+| **Dağıtık Önbellek (KV)** | Upstash Redis REST API (Vercel KV uyumlu, harici bağımlılıksız yerel HTTP istemcisi)  |
 | **Gürültü Filtresi**      | `@livekit/krisp-noise-filter` (Krisp WebAssembly AI Noise Suppression)                |
+| **Ses Sentezleme**        | Web Audio API (Sentetik osilatörler ile harici ses dosyası olmadan bildirim sesleri)  |
 | **CI/CD & Release**       | GitHub Actions (`build-electron.yml`), `softprops/action-gh-release@v2`               |
 
 ---
 
-## 🌟 Tamamlanan Özellikler ve Güncel Durum (v1.0.3)
+## 🧠 Mimari ve Çalışma Mantığı (Deep Dive)
 
-### 0. 🔄 Çoklu LiveKit API Havuzu & Otomatik Kota Geçişi (Failover Pool)
-- **Kesintisiz Görüşme:** Birden fazla LiveKit Cloud API hesabı bir havuzda toplanır. Bir API'nin ücretsiz kotası dolduğunda sistem otomatik olarak sıradaki hesaba geçer.
-- **Oda Bazlı İzolasyon (Room Pinning):** Bir odaya bağlanan tüm kullanıcılar garantili olarak aynı LiveKit hesabına yönlendirilir; böylece katılımcıların birbirini görememe/duyamama sorunu ortadan kalkar.
-- **Vercel KV / Upstash Redis Desteği:** Serverless ortamda oda-API eşleşmeleri ve kota durumları milisaniyede önbellekten okunur.
-- **Otomatik Canlandırma (Self-Healing):** Tüm kotalar dolduğunda sistem otomatik olarak ay başı yenilenen hesapları test edip canlıya alır.
+### 1. Çoklu LiveKit API Havuzu & Failover Mantığı (`src/lib/livekit-pool.ts`)
+LiveKit Cloud ücretsiz paketinde hesap başına aylık 100 GB kota ve 100 eşzamanlı bağlantı sınırı bulunur. Voxa, birden fazla hesabı (`LIVEKIT_API_KEY_1`, `_2`, `_3`) tek bir havuzda yönetir:
 
-### 0.1 📁 Sohbet İçi P2P Dosya & Görsel Transferi (WebRTC DataChannel)
-- **0 Bayt Sunucu Kotası:** Dosyalar ve görseller LiveKit sunucularından geçmez; doğrudan kullanıcıların bilgisayarları arasında (Peer-to-Peer) şifreli olarak akar.
-- **Sohbet İçi Önizleme:** Paylaşılan görseller mesaj kutusunda anında küçük önizleme resmi (thumbnail) olarak görünür.
-- **Tek Tıkla İndirme:** Odadaki diğer katılımcılar "İndir" butonuna basarak canlı yüzde ilerleme çubuğuyla dosyayı doğrudan bilgisayarlarına indirebilir.
-- **Pano Desteği (Ctrl + V):** Kopyalanan ekran alıntıları ve görseller sohbete doğrudan yapıştırılabilir.
+```
+[Kullanıcı Odaya Girer: 'oda-1']
+             │
+             ▼
+[API Token Endpoint: /api/token]
+             │
+             ├─► 1. Upstash KV / Redis Kontrolü:
+             │      'room_assigned:oda-1' anahtarı var mı?
+             │      ├─► EVET: Odaya daha önce atanmış hesabı al (Örn: account_2)
+             │      └─► HAYIR: Aktif odaları tara veya Consistent Hash ile sağlıklı bir hesap seç
+             │
+             ├─► 2. Kilit Kontrolü:
+             │      Oda kilitli mi? Kilitliyse ve kullanıcı içeride değilse -> 403 Forbidden
+             │
+             ├─► 3. Token Üretimi & 429 Kota Hatası Yakalama:
+             │      LiveKit 429 (Kota Doldu) dönerse:
+             │      - Hesabı bellekte ve KV'de 'quota_exhausted:account_x' olarak işaretle
+             │      - Otomatik olarak sıradaki sağlıklı hesaba geç
+             │
+             └─► 4. Yanıt:
+                    { token: "...", wsUrl: "wss://...", accountId: "account_2" }
+```
 
-### 0.2 🔔 Web Audio API Ses Efektleri & Beni Hatırla
-- **Discord Tarzı Bildirimler:** Odaya katılım (Join Chime), odadan ayrılma (Leave Chime) ve mikrofon sessize alma sesleri harici MP3 yüklemeden tarayıcının Web Audio API'si ile kristal netliğinde çalınır.
-- **Beni Hatırla:** Kullanıcı adı yerel depolamada saklanır; son katıldığı odalar (#sohbet-1) hızlı erişim için ana sayfada listelenir.
-
-### 1. 🖥️ Masaüstü Ekran Paylaşım Seçici Modalı (Desktop Source Picker)
-- Masaüstü uygulamasında ekran paylaşımına basıldığında tüm aktif pencereler ve ekranlar canlı önizlemeli kartlar olarak listelenir.
-- Kullanıcı _"Tüm Ekran (Entire Screen)"_ veya _"Spesifik Uygulama / Oyun Penceresi"_ arasında seçim yapabilir.
-- Windows işletim sisteminde ekran sesi (loopback audio) otomatik yakalanır.
-
-### 2. 🎧 Gelişmiş Aygıt Seçimi & Ses Kontrolü
-- **Aygıt Seçicileri (Media Device Selectors):** Kullanıcının kullanmak istediği **Mikrofon Aygıtını (Input Device)** ve **Hoparlör / Kulaklık Aygıtını (Output Device)** canlı görüşme esnasında değiştirebilmesi (`useMediaDeviceSelect`).
-- **Kişi Bazlı Ses Kontrolü:** Katılımcı kartındaki ses sürgüsü (%0 - %200) ile her kullanıcının sesi bağımsız ayarlanabilir.
-- **Sağırlaştırma (Deafen) Butonu:** Tek tıkla hem kendi mikrofonunu kapatıp hem de gelen tüm oda seslerini tamamen sessize alan buton (Kısayol: `D`).
-
-### 3. ⌨️ Klavye Kısayolları (Keybindings)
-- `M`: Mikrofon Aç / Kapat (Toggle Mute)
-- `D`: Kulaklık / Gelen Sesleri Aç / Kapat (Toggle Deafen)
-- `F`: Tam Ekran Moduna Geç / Çık (Full Screen Toggle)
-
-### 4. 🔗 Kesintisiz Davet Linki Kopyalama
-- Hem Web hem Electron ortamında `https://ses.app.noticq.com/[roomName]` formatındaki oda davet linki güvenli IPC ve clipboard API'leri ile sorunsuz kopyalanır.
-
-### 5. 💬 Anlık Sohbet & Okunmamış Mesaj Rozet Bildirimi
-- Seçilebilir sohbet metni (`select-text`).
-- Sohbet çekmecesi kapalıyken gelen yeni mesajlar için dinamik **Okunmamış Mesaj Sayacı (Badge Count)**. Sohbet açıldığında sayaç otomatik sıfırlanır.
-
-### 6. 🚀 Otomatik Güncelleme & Dinamik İndirme API'si (`/api/download/desktop`)
-- `/api/download/desktop` rotası GitHub Releases API'sini (`AYEDEV0/sesli`) canlı sorgulayarak her zaman en son yayınlanan `.exe` kurulum dosyasının doğrudan indirme bağlantısını döner.
-- Masaüstü uygulaması `electron-updater` ile arka planda yeni versiyonları denetler.
+#### Kritik Kurallar:
+1. **Oda Bazlı Sabitleme (Room Pinning):** Aynı odaya giren tüm kullanıcılar **kesinlikle aynı LiveKit hesabına** bağlanır. Farklı LiveKit sunucularına bağlanan kullanıcılar birbirini göremez ve duyamaz. Bu durum Upstash Redis (`room_assigned:<oda_adi>`) ve `consistentHash()` algoritması ile garanti altına alınmıştır.
+2. **Statik Ortam Değişkenleri:** Next.js/Webpack serverless derlemesinde dinamik döngü `process.env[`KEY_${i}`]` undefined döner. Bu yüzden `LIVEKIT_API_KEY_1`, `_2`, `_3` değişkenleri kodda açıkça statik yazılmıştır.
+3. **Gizli Anahtar Güvenliği:** Kod içine asla gerçek API anahtarı string olarak yazılmaz; Netlify'ın gizli anahtar tarayıcısı (Secret Scanner) derlemeyi engeller.
 
 ---
 
-## 🔮 Gelecek Sürümlerde Eklenecek Özellikler (Yol Haritası)
+### 2. P2P Dosya & Görsel Transferi Mimarisi (`src/lib/p2p-file-transfer.ts`)
+Sohbet üzerinden yüksek boyutlu dosyalar veya ekran alıntıları gönderildiğinde LiveKit sunucusunun kotasını tüketmemek için **doğrudan WebRTC DataChannel (Peer-to-Peer)** kullanılır:
+
+```
+[Gönderici: Alice]                                                [Alıcı: Bob]
+        │                                                               │
+        ├─► 1. Resim/Dosya Seçilir & 160px Canvas Küçük Resim Üretilir   │
+        ├─► 2. LiveKit Chat Üzerinden Teklif Gönderilir (<1 KB JSON):   │
+        │      { type: "p2p-file-offer", fileId, name, size, thumbnail }│
+        │──────────────────────────────────────────────────────────────►│
+        │                                                               │ (Sohbette görsel kartı
+        │                                                               │  ve 'İndir' butonu çıkar)
+        │                                                               │
+        │   ◄───────────────────────────────────────────────────────────┤ Bob 'İndir'e basar:
+        │          { type: "p2p-file-request", fileId }                 │
+        │                                                               │
+        ├─► 3. Doğrudan WebRTC Bağlantısı Kurulur (Google STUN):         │
+        │      SDP Offer / Answer ve ICE Adayları LiveKit üzerinden iletilir
+        │   ◄══════════════════════════════════════════════════════════►│
+        │                                                               │
+        ├─► 4. Dosya 64 KB Binary Paketler Halinde P2P RTCDataChannel   │
+        │      üzerinden akar (%0 - %100 Canlı İlerleme Çubuğu)         │
+        │══════════════════════════════════════════════════════════════►│
+        │                                                               │
+        │                                                               └─► Dosya Bob'un tarayıcısına
+        │                                                                   otomatik indirilir.
+```
+- **LiveKit Sunucu Maliyeti: 0 Bayt!** Sadece birkaç baytlık sinyalizasyon JSON'ı geçer; dosyanın kendisi asla sunucuya uğramaz.
+- **Pano Entegrasyonu:** Sohbet kutusuna `Ctrl + V` ile ekran alıntısı veya resim doğrudan yapıştırılabilir.
+
+---
+
+### 3. Dağıtık Önbellek: Upstash Redis / Vercel KV REST İstemcisi (`src/lib/kv.ts`)
+Harici ağır npm kütüphanelerine (`@upstash/redis`, `ioredis`) gerek kalmadan, doğrudan Node.js yerel `fetch` API'si ile Upstash REST API'sine konuşan hafif bir REST istemcisi yazılmıştır:
+- `kvGet(key)`: JSON komut dizisi (`["GET", key]`) gönderir.
+- `kvSet(key, value, exSeconds)`: Veriyi belirtilen TTL (ömür) ile kaydeder.
+- `kvDel(key)`: Anahtarı siler.
+- `KV_REST_API_URL` ve `KV_REST_API_TOKEN` tanımlanmadığında uygulama çökmez; bellek içi (in-memory) güvenli fallback modunda çalışmaya devam eder.
+
+---
+
+### 4. Sentetik Ses Sentezleyici (`src/lib/sounds.ts`)
+Dışarıdan MP3 dosyası indirmeye gerek kalmadan, tarayıcının yerel `AudioContext` osilatörleri kullanılarak matematiksel frekans dalgalarıyla Discord tarzı yumuşak ses efektleri üretilir:
+- **Join Chime:** D5 (587.33 Hz) -> A5 (880.00 Hz) yükselen yumuşak sinüs tonu.
+- **Leave Chime:** A5 (880.00 Hz) -> D5 (587.33 Hz) azalan sinüs tonu.
+- **Mute / Unmute Clicks:** Yüksek frekanslı mikro tıklama tonları.
+
+---
+
+## 🌟 Tamamlanan Özellikler (v1.0.3)
+
+1. **Çoklu LiveKit Havuzu & Oda Sabitleme:** API 1, API 2 ve API 3 arasında otomatik geçiş; aynı odadaki kişilerin aynı sunucuya bağlanması.
+2. **P2P WebRTC Sohbet Dosya/Resim Paylaşımı:** Sınırsız dosya paylaşımı, canlı küçük resim önizlemesi, `Ctrl + V` ekran görüntüsü yapıştırma, canlı indirme ilerleme çubuğu.
+3. **Web Audio Bildirim Sesleri:** Giriş, çıkış, mute/unmute sesleri.
+4. **Beni Hatırla & Hızlı Oda Geçmişi:** Kullanıcı adını ve son girilen 3 odayı `localStorage`'da saklama.
+5. **Masaüstü Ekran Paylaşım Seçici (Desktop Source Picker):** Electron v44 ile ekran ve pencereleri önizlemeli kartlarla seçebilme.
+6. **Windows Sistem Sesi Yakalama:** Ekran paylaşırken sistem sesini (oyun/video sesi) karşıya aktarma (Loopback Audio).
+7. **Kişi Bazlı Ses Kontrolü:** Odadaki her katılımcının ses seviyesini ayrı ayrı %0 - %200 arasında ayarlama.
+8. **Klavye Kısayolları:** `M` (Mute), `D` (Deafen), `F` (Full Screen).
+9. **Oda Kilitleme:** Kilitli odalara yetkisiz girişi engelleme.
+10. **GitHub Actions CI/CD:** Her `main` push işleminde otomatik `.exe` derleme ve GitHub Releases'a yükleme.
+
+---
+
+## 🔮 Gelecek Sürümlerde Eklenecek Özellikler (Yol Haritası & Uygulama Rehberi)
+
+Gelecekte projeye devam ederken aşağıdaki sıralamayla geliştirmeler yapılabilir:
 
 ### 1. 🖼️ Yüzen Yayın Penceresi (Picture-in-Picture / Floating Window)
-- Başka uygulamalarla veya oyunlarla ilgilenirken arkadaşınızın ekran yayınını veya kamerasını ekranın bir köşesinde küçük, her zaman üstte (Always-on-top) yüzen pencerede izleyebilme.
+- **Amaç:** Kullanıcı oyun oynarken veya başka bir uygulamadayken arkadaşının ekran yayınını ekranın bir köşesinde küçük, her zaman üstte (Always-on-top) bir pencerede izleyebilsin.
+- **Uygulama Yöntemi:**
+  - **Web Tarafı:** Modern tarayıcılarda `documentPictureInPicture.requestWindow({ width: 400, height: 225 })` API'si kullanılarak yayın video elementi yeni küçük bir pencereye taşınır.
+  - **Electron Tarafı:** `electron/main.js` içinde `createPiPWindow(streamUrl)` fonksiyonu tanımlanır:
+    ```javascript
+    const pipWin = new BrowserWindow({
+      width: 420,
+      height: 240,
+      alwaysOnTop: true,
+      frame: false,
+      transparent: true,
+      webPreferences: { preload: path.join(__dirname, 'preload.js') }
+    });
+    ```
 
-### 2. 📊 Anlık Ağ ve Yayın İstatistikleri (Ping, FPS, Bitrate Panel)
-- Bağlantı kalitesini ve gecikmeyi gösteren canlı gösterge (Ping ms, Packet Loss, Resolution, Frame Rate).
+### 2. 📊 Anlık Ağ ve Yayın İstatistikleri (Diagnostics Overlay)
+- **Amaç:** Bağlantı kalitesi, gecikme (Ping), FPS ve veri akışını gösteren küçük bir HUD paneli.
+- **Uygulama Yöntemi:**
+  - LiveKit `Room` nesnesi üzerinden WebRTC istatistikleri dinlenir:
+    ```typescript
+    const stats = await participant.getPublisherStats(); // veya getSubscriberStats()
+    // RTT (Ping), Packet Loss, Current Bitrate, Resolution, FrameRate
+    ```
+  - Sağ üst köşeye yarı saydam bir FPS/Ping rozeti eklenir.
 
-### 3. 🎙️ Bas-Konuş (Push-to-Talk) Modu
-- Sabit mikrofon açık kalması yerine basılı tutulduğunda konuşmayı sağlayan Bas-Konuş mod tuşu desteği.
+### 3. 🎙️ Bas-Konuş (Push-to-Talk) Modu & Global Tuş Dinleyici
+- **Amaç:** Mikrofonun sürekli açık kalması yerine belirli bir tuşa basılı tutulduğunda ses iletmesi.
+- **Uygulama Yöntemi:**
+  - Web'de `window.addEventListener('keydown')` ve `'keyup'` ile tuş basılı tutma kontrolü.
+  - Masaüstünde (Electron) oyun oynarken pencere odakta olmasa bile çalışabilmesi için `globalShortcut.register('Space', ...)` veya `uIOhook` kütüphanesi ile global kısayol desteği.
 
-### 4. 👑 Oda Yöneticisi Rolleri (Host / Moderator Controls)
-- Odayı oluşturan kişinin diğer katılımcıları susturabilmesi (Server Mute) veya odadan çıkarabilmesi (Kick).
+### 4. 👑 Oda Yöneticisi & Moderasyon Yetkileri (Host / Moderator)
+- **Amaç:** Odayı ilk açan kişinin veya yönetici olarak yetkilendirilen kişinin diğer kullanıcıları uzaktan susturabilmesi (Server Mute) veya odadan atabilmesi (Kick).
+- **Uygulama Yöntemi:**
+  - `src/app/api/room/moderate/route.ts` endpoint'i açılır.
+  - LiveKit Server SDK `RoomServiceClient.mutePublishedTrack(room, identity, trackSid, true)` ve `RoomServiceClient.removeParticipant(room, identity)` fonksiyonları kullanılır.
+  - Katılımcı kartına yöneticiye özel "Sustur" ve "Odadan Çıkar" menüsü eklenir.
 
 ### 5. 🎨 Özel Tema Seçenekleri ve Profil Özelleştirme
-- Kullanıcı avatarı seçimi, renk temaları (Cyberpunk, Midnight Dark, Neon Blue) ve kişisel durum mesajı.
+- **Amaç:** Kullanıcıların avatar seçebilmesi, renk paletleri (Cyberpunk Neon, Midnight Dark, Emerald) arasında geçiş yapabilmesi.
+- **Uygulama Yöntemi:**
+  - `localStorage`'da seçilen avatar ve renk teması saklanır; LiveKit participant metadata'sına JSON olarak basılır: `{ avatarId: 'cat', theme: 'neon' }`.
+  - Odadaki herkes diğerinin özel avatarını görür.
+
+### 6. 🔒 Uçtan Uca Şifreleme (E2EE)
+- **Amaç:** Ses ve video paketlerinin LiveKit sunucusu tarafından bile çözülemeyeceği sıfır bilgi (Zero-Knowledge) şifreleme.
+- **Uygulama Yöntemi:**
+  - `@livekit/client` kütüphanesinin yerleşik `E2EEOptions` ve Web Worker tabanlı Cryptor altyapısı aktifleştirilir.
 
 ---
 
 ## 💻 Masaüstü Uygulaması (Electron) Çalıştırma ve Build
 
-### 1. Masaüstü Uygulamasını Geliştirme Modunda Çalıştırma
+### 1. Geliştirme Modunda Çalıştırma
 ```bash
 npm run electron:dev
 ```
@@ -123,7 +218,7 @@ ses/
 ├── src/
 │   ├── app/
 │   │   ├── [roomName]/
-│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit, 2K Yayın, Source Picker, Sohbet
+│   │   │   └── page.tsx        # Canlı görüşme odası UI, LiveKit, 2K Yayın, P2P Dosya & Resim, Sohbet
 │   │   ├── api/
 │   │   │   ├── download/
 │   │   │   │   └── desktop/
@@ -136,17 +231,57 @@ ses/
 │   │   ├── globals.css         # Global stiller ve Tailwind importları
 │   │   ├── layout.tsx          # Root layout ve Voxa metadata başlığı
 │   │   └── page.tsx            # Ana sayfa odaya katılma/oluşturma ve indirme alanı
-├── .env.local                  # LiveKit API Key & Secret ortam değişkenleri
+│   └── lib/
+│       ├── kv.ts               # Upstash Redis / Vercel KV REST istemcisi (harici bağımlılıksız)
+│       ├── livekit-pool.ts     # Çoklu LiveKit API havuzu, kota failover & oda sabitleme motoru
+│       ├── p2p-file-transfer.ts# WebRTC DataChannel P2P dosya & görsel aktarım motoru
+│       └── sounds.ts           # Web Audio API sentetik ses efektleri (Join, Leave, Mute)
+├── .env.example                # Örnek ortam değişkenleri şablonu
+├── .env.local                  # Yerel ortam değişkenleri (Git'e atılmaz)
 ├── package.json                # Proje bağımlılıkları, Electron ve npm komutları
-└── README.md                   # Proje dokümantasyonu
+└── README.md                   # Kapsamlı proje dokümantasyonu ve mimari rehber
 ```
 
 ---
 
-## ⚙️ Ortam Değişkenleri (.env.local)
+## ⚙️ Ortam Değişkenleri Rehberi (.env.local & Netlify)
 
 ```env
-LIVEKIT_API_KEY=your_livekit_api_key_here
-LIVEKIT_API_SECRET=your_livekit_api_secret_here
-NEXT_PUBLIC_LIVEKIT_URL=wss://your-livekit-project.livekit.cloud
+# ==========================================================
+# ÇOKLU LIVEKIT HESAP HAVUZU (MULTI-ACCOUNT POOL)
+# ==========================================================
+
+# 1. LiveKit Hesabı (Kotası doluysa EXHAUSTED_1=true yapılır)
+LIVEKIT_API_KEY_1=your_key_1
+LIVEKIT_API_SECRET_1=your_secret_1
+LIVEKIT_URL_1=wss://your-first-project.livekit.cloud
+LIVEKIT_EXHAUSTED_1=true
+
+# 2. LiveKit Hesabı (Aktif)
+LIVEKIT_API_KEY_2=your_key_2
+LIVEKIT_API_SECRET_2=your_secret_2
+LIVEKIT_URL_2=wss://your-second-project.livekit.cloud
+LIVEKIT_EXHAUSTED_2=false
+
+# 3. LiveKit Hesabı (Aktif)
+LIVEKIT_API_KEY_3=your_key_3
+LIVEKIT_API_SECRET_3=your_secret_3
+LIVEKIT_URL_3=wss://your-third-project.livekit.cloud
+LIVEKIT_EXHAUSTED_3=false
+
+# Varsayılan LiveKit URL
+NEXT_PUBLIC_LIVEKIT_URL=wss://your-first-project.livekit.cloud
+
+# ==========================================================
+# UPSTASH REDIS / VERCEL KV (İsteğe Bağlı ama Önerilir)
+# ==========================================================
+# Tanımlandığında odalar ve kota durumları Redis üzerinde önbelleğe alınır.
+KV_REST_API_URL=https://your-upstash-redis.upstash.io
+KV_REST_API_TOKEN=your_upstash_rest_token
+
+# ==========================================================
+# UYGULAMA VE İNDİRME AYARLARI
+# ==========================================================
+NEXT_PUBLIC_APP_URL=https://ses.app.noticq.com
+DESKTOP_DOWNLOAD_URL=https://github.com/AYEDEV0/sesli/releases
 ```
