@@ -271,6 +271,7 @@ export async function createRoomToken(roomName: string, username: string) {
         canPublish: true,
         canSubscribe: true,
         canPublishData: true,
+        canUpdateOwnMetadata: true,
       });
 
       const token = await at.toJwt();

@@ -152,6 +152,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   // Avatar Yönetimi Durumu
   const [roomAvatar, setRoomAvatar] = useState<string | null>(null);
+  const roomAvatarRef = useRef<string | null>(null);
+  const [participantAvatars, setParticipantAvatars] = useState<Record<string, string>>({});
   const [avatarModalOpen, setAvatarModalOpen] = useState<boolean>(false);
   const roomAvatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -320,10 +322,53 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
     p2pManagerRef.current = manager;
 
+    // DataChannel üzerinden avatar yayınlama yardımcısı
+    const broadcastAvatar = (avatarData: string | null) => {
+      if (!room?.localParticipant) return;
+      try {
+        const payload = JSON.stringify({
+          type: "VOXA_AVATAR",
+          identity: room.localParticipant.identity,
+          avatar: avatarData,
+        });
+        room.localParticipant
+          .publishData(new TextEncoder().encode(payload), { reliable: true })
+          .catch(() => {});
+      } catch (err) {
+        console.warn("Avatar yayınlama hatası:", err);
+      }
+    };
+
     const handleDataReceived = (payload: Uint8Array, participant?: any) => {
       try {
         const text = new TextDecoder().decode(payload);
         const data = JSON.parse(text);
+
+        // 1. Canlı Avatar Yayın Sinyali
+        if (data.type === "VOXA_AVATAR") {
+          const senderId = data.identity || participant?.identity;
+          if (senderId) {
+            setParticipantAvatars((prev) => {
+              if (data.avatar) {
+                return { ...prev, [senderId]: data.avatar };
+              } else {
+                const next = { ...prev };
+                delete next[senderId];
+                return next;
+              }
+            });
+          }
+          return;
+        }
+
+        // 2. Yeni Katılımcı Avatar Talep Sinyali
+        if (data.type === "VOXA_AVATAR_REQ") {
+          if (roomAvatarRef.current) {
+            broadcastAvatar(roomAvatarRef.current);
+          }
+          return;
+        }
+
         if (!data.voxaP2P) return;
 
         const myId = room.localParticipant?.identity || localParticipant.identity;
@@ -350,49 +395,143 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
       }
     };
 
+    // Yeni katılımcı bağlandığında avatarımızı ona duyur
+    const handleParticipantConnected = () => {
+      if (roomAvatarRef.current) {
+        broadcastAvatar(roomAvatarRef.current);
+      }
+    };
+
+    // Katılımcı metadata'sı değiştiğinde avatar state'ini güncelle
+    const handleMetadataChanged = (metadata: string | undefined, participant: any) => {
+      if (!participant || !metadata) return;
+      try {
+        const parsed = JSON.parse(metadata);
+        if (parsed.avatar) {
+          setParticipantAvatars((prev) => ({
+            ...prev,
+            [participant.identity]: parsed.avatar,
+          }));
+        } else if (parsed.avatar === null) {
+          setParticipantAvatars((prev) => {
+            const next = { ...prev };
+            delete next[participant.identity];
+            return next;
+          });
+        }
+      } catch {}
+    };
+
     room.on(RoomEvent.DataReceived, handleDataReceived);
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    room.on(RoomEvent.ParticipantMetadataChanged, handleMetadataChanged);
 
     return () => {
       room.off(RoomEvent.DataReceived, handleDataReceived);
+      room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      room.off(RoomEvent.ParticipantMetadataChanged, handleMetadataChanged);
       manager.cleanup();
     };
   }, [room, localParticipant.identity]);
 
-  // Kayıtlı avatarı LiveKit metadata'sına eşitleme
+  // Kayıtlı avatarı LiveKit metadata'sına ve DataChannel'a anında eşitleme
   useEffect(() => {
     if (!room) return;
     const saved = getStoredAvatar();
     if (saved) {
       setRoomAvatar(saved);
+      roomAvatarRef.current = saved;
       try {
-        room.localParticipant.setMetadata(JSON.stringify({ avatar: saved }));
+        room.localParticipant.setMetadata(JSON.stringify({ avatar: saved })).catch(() => {});
       } catch (err) {
         console.warn("Avatar metadata hatası:", err);
       }
     }
+
+    // Odadaki mevcut katılımcılardan avatarlarını talep et ve kendi avatarımızı yayınla
+    const syncTimer = setTimeout(() => {
+      try {
+        const reqPayload = JSON.stringify({ type: "VOXA_AVATAR_REQ" });
+        room.localParticipant.publishData(new TextEncoder().encode(reqPayload), {
+          reliable: true,
+        }).catch(() => {});
+        if (saved) {
+          const payload = JSON.stringify({
+            type: "VOXA_AVATAR",
+            identity: room.localParticipant.identity,
+            avatar: saved,
+          });
+          room.localParticipant.publishData(new TextEncoder().encode(payload), {
+            reliable: true,
+          }).catch(() => {});
+        }
+      } catch {}
+    }, 600);
+
+    return () => clearTimeout(syncTimer);
   }, [room]);
 
-  // Katılımcının avatarını çözümleme fonksiyonu
+  // Katılımcının avatarını çözümleme fonksiyonu (Tüm katılımcılar anında görür)
   const getParticipantAvatar = (p?: any): string | null => {
     if (!p) return null;
+    const identity = typeof p === "string" ? p : p.identity;
     const isMe =
-      p.identity === localParticipant.identity ||
-      p.identity === room?.localParticipant?.identity;
+      identity === localParticipant.identity ||
+      identity === room?.localParticipant?.identity;
+
     if (isMe && roomAvatar) return roomAvatar;
+
+    // 1. Canlı DataChannel / State önbelleği
+    if (identity && participantAvatars[identity]) {
+      return participantAvatars[identity];
+    }
+
+    // 2. Katılımcı nesnesi üzerindeki doğrudan metadata
     if (p.metadata) {
       try {
         const parsed = JSON.parse(p.metadata);
         if (parsed.avatar) return parsed.avatar;
       } catch {}
     }
+
+    // 3. msg.from gibi sadece identity içeren nesneler için oda katılımcılarında arama
+    if (identity && room) {
+      const found =
+        room.remoteParticipants.get(identity) ||
+        participants.find((part) => part.identity === identity);
+      if (found?.metadata) {
+        try {
+          const parsed = JSON.parse(found.metadata);
+          if (parsed.avatar) return parsed.avatar;
+        } catch {}
+      }
+    }
+
     return null;
   };
 
-  // Avatar Değiştirme / Yükleme İşleyicileri
+  // Avatar Değiştirme / Yükleme İşleyicileri (Kaydetmeye gerek kalmadan anında odadakilere iletir)
   const handleUpdateRoomAvatar = async (avatarDataUrl: string) => {
     setRoomAvatar(avatarDataUrl);
+    roomAvatarRef.current = avatarDataUrl;
     storeAvatar(avatarDataUrl);
+
     if (room?.localParticipant) {
+      // 1. DataChannel ile odaya canlı yayınla (0 gecikme)
+      try {
+        const payload = JSON.stringify({
+          type: "VOXA_AVATAR",
+          identity: room.localParticipant.identity,
+          avatar: avatarDataUrl,
+        });
+        room.localParticipant.publishData(new TextEncoder().encode(payload), {
+          reliable: true,
+        }).catch(() => {});
+      } catch (e) {
+        console.warn("Avatar DataChannel yayın hatası:", e);
+      }
+
+      // 2. LiveKit metadata'sına kaydet (canUpdateOwnMetadata: true)
       try {
         await room.localParticipant.setMetadata(JSON.stringify({ avatar: avatarDataUrl }));
       } catch (e) {
@@ -416,8 +555,21 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
 
   const handleRemoveRoomAvatar = async () => {
     setRoomAvatar(null);
+    roomAvatarRef.current = null;
     clearStoredAvatar();
+
     if (room?.localParticipant) {
+      try {
+        const payload = JSON.stringify({
+          type: "VOXA_AVATAR",
+          identity: room.localParticipant.identity,
+          avatar: null,
+        });
+        room.localParticipant.publishData(new TextEncoder().encode(payload), {
+          reliable: true,
+        }).catch(() => {});
+      } catch {}
+
       try {
         await room.localParticipant.setMetadata(JSON.stringify({ avatar: null }));
       } catch {}
