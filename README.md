@@ -30,7 +30,23 @@
 
 ---
 
-## 🌟 Tamamlanan Özellikler ve Güncel Durum (v1.0.2)
+## 🌟 Tamamlanan Özellikler ve Güncel Durum (v1.0.3)
+
+### 0. 🔄 Çoklu LiveKit API Havuzu & Otomatik Kota Geçişi (Failover Pool)
+- **Kesintisiz Görüşme:** Birden fazla LiveKit Cloud API hesabı bir havuzda toplanır. Bir API'nin ücretsiz kotası dolduğunda sistem otomatik olarak sıradaki hesaba geçer.
+- **Oda Bazlı İzolasyon (Room Pinning):** Bir odaya bağlanan tüm kullanıcılar garantili olarak aynı LiveKit hesabına yönlendirilir; böylece katılımcıların birbirini görememe/duyamama sorunu ortadan kalkar.
+- **Vercel KV / Upstash Redis Desteği:** Serverless ortamda oda-API eşleşmeleri ve kota durumları milisaniyede önbellekten okunur.
+- **Otomatik Canlandırma (Self-Healing):** Tüm kotalar dolduğunda sistem otomatik olarak ay başı yenilenen hesapları test edip canlıya alır.
+
+### 0.1 📁 Sohbet İçi P2P Dosya & Görsel Transferi (WebRTC DataChannel)
+- **0 Bayt Sunucu Kotası:** Dosyalar ve görseller LiveKit sunucularından geçmez; doğrudan kullanıcıların bilgisayarları arasında (Peer-to-Peer) şifreli olarak akar.
+- **Sohbet İçi Önizleme:** Paylaşılan görseller mesaj kutusunda anında küçük önizleme resmi (thumbnail) olarak görünür.
+- **Tek Tıkla İndirme:** Odadaki diğer katılımcılar "İndir" butonuna basarak canlı yüzde ilerleme çubuğuyla dosyayı doğrudan bilgisayarlarına indirebilir.
+- **Pano Desteği (Ctrl + V):** Kopyalanan ekran alıntıları ve görseller sohbete doğrudan yapıştırılabilir.
+
+### 0.2 🔔 Web Audio API Ses Efektleri & Beni Hatırla
+- **Discord Tarzı Bildirimler:** Odaya katılım (Join Chime), odadan ayrılma (Leave Chime) ve mikrofon sessize alma sesleri harici MP3 yüklemeden tarayıcının Web Audio API'si ile kristal netliğinde çalınır.
+- **Beni Hatırla:** Kullanıcı adı yerel depolamada saklanır; son katıldığı odalar (#sohbet-1) hızlı erişim için ana sayfada listelenir.
 
 ### 1. 🖥️ Masaüstü Ekran Paylaşım Seçici Modalı (Desktop Source Picker)
 - Masaüstü uygulamasında ekran paylaşımına basıldığında tüm aktif pencereler ve ekranlar canlı önizlemeli kartlar olarak listelenir.
@@ -90,7 +106,7 @@ npm run electron:dev
 ```bash
 npm run electron:build
 ```
-*Üretilen kurulum dosyası `dist/` klasörüne kaydedilir (`Voxa Desktop Setup 1.0.2.exe`).*
+*Üretilen kurulum dosyası `dist/` klasörüne kaydedilir (`Voxa Desktop Setup 1.0.3.exe`).*
 
 ---
 

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Mic, Radio, User, DoorOpen, Sparkles, ArrowRight, Laptop, Download } from "lucide-react";
+import { Radio, User, DoorOpen, Sparkles, ArrowRight, Laptop, Download, History } from "lucide-react";
 
 function JoinForm() {
   const router = useRouter();
@@ -10,12 +10,39 @@ function JoinForm() {
 
   const [username, setUsername] = useState<string>("");
   const [roomName, setRoomName] = useState<string>("");
+  const [rememberMe, setRememberMe] = useState<boolean>(true);
+  const [recentRooms, setRecentRooms] = useState<string[]>([]);
   const [error, setError] = useState<string>("");
   const [isElectronApp, setIsElectronApp] = useState<boolean>(false);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && (window as any).electronAPI) {
-      setIsElectronApp(true);
+    if (typeof window !== "undefined") {
+      if ((window as any).electronAPI) {
+        setIsElectronApp(true);
+      }
+
+      // Beni Hatırla: Kayıtlı kullanıcı adını yükle
+      const savedUser = localStorage.getItem("voxa_username");
+      const savedRemember = localStorage.getItem("voxa_remember_me");
+      if (savedUser) {
+        setUsername(savedUser);
+      }
+      if (savedRemember !== null) {
+        setRememberMe(savedRemember === "true");
+      }
+
+      // Son ziyaret edilen odaları yükle
+      try {
+        const savedRooms = localStorage.getItem("voxa_recent_rooms");
+        if (savedRooms) {
+          const parsed = JSON.parse(savedRooms);
+          if (Array.isArray(parsed)) {
+            setRecentRooms(parsed.slice(0, 3));
+          }
+        }
+      } catch {
+        // ignore
+      }
     }
   }, []);
 
@@ -39,11 +66,30 @@ function JoinForm() {
     }
 
     if (!trimmedRoomName) {
-      setError("Lütfen katılan bir oda ismi girin.");
+      setError("Lütfen katılmak istediğiniz oda ismini girin.");
       return;
     }
 
-    // URL slug güvenliği için temizleme
+    // Beni Hatırla Ayarlarını Kaydet
+    if (typeof window !== "undefined") {
+      if (rememberMe) {
+        localStorage.setItem("voxa_username", trimmedUsername);
+        localStorage.setItem("voxa_remember_me", "true");
+      } else {
+        localStorage.removeItem("voxa_username");
+        localStorage.setItem("voxa_remember_me", "false");
+      }
+
+      // Son Kullanılan Odaları Güncelle (En fazla 3 oda)
+      try {
+        const updated = [trimmedRoomName, ...recentRooms.filter((r) => r !== trimmedRoomName)].slice(0, 3);
+        localStorage.setItem("voxa_recent_rooms", JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+    }
+
+    // URL slug güvenliği için encode
     const formattedRoom = encodeURIComponent(trimmedRoomName);
     const formattedUser = encodeURIComponent(trimmedUsername);
 
@@ -66,8 +112,8 @@ function JoinForm() {
           <h1 className="text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
             Voxa <Sparkles className="w-6 h-6 text-[#5865f2]" />
           </h1>
+          <p className="text-xs text-[#949ba4] mt-1 font-medium">Yüksek Kaliteli Sesli İletişim & Ekran Paylaşımı</p>
         </div>
-
 
         {/* Error Alert */}
         {error && (
@@ -99,9 +145,16 @@ function JoinForm() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4] mb-2">
-              Oda İsmi
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold uppercase tracking-wider text-[#949ba4]">
+                Oda İsmi
+              </label>
+              {recentRooms.length > 0 && (
+                <span className="text-[10px] text-[#949ba4] flex items-center gap-1 font-medium">
+                  <History className="w-3 h-3 text-[#5865f2]" /> Son Odalar
+                </span>
+              )}
+            </div>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#949ba4]">
                 <DoorOpen className="w-5 h-5" />
@@ -116,6 +169,37 @@ function JoinForm() {
                 required
               />
             </div>
+
+            {/* Son Odalar Hızlı Seçim Butonları */}
+            {recentRooms.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {recentRooms.map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setRoomName(r)}
+                    className="text-[11px] px-2.5 py-1 bg-[#1e1f22] hover:bg-[#5865f2]/20 hover:text-[#5865f2] text-[#949ba4] border border-[#2b2d31] rounded-lg transition-all cursor-pointer truncate max-w-[120px]"
+                  >
+                    #{r}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Beni Hatırla Seçeneği */}
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2.5 cursor-pointer group">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
+                className="w-4 h-4 rounded bg-[#1e1f22] border-[#2b2d31] text-[#5865f2] focus:ring-[#5865f2]/40 focus:ring-2 accent-[#5865f2] cursor-pointer"
+              />
+              <span className="text-xs text-[#949ba4] group-hover:text-white transition-colors font-medium">
+                Kullanıcı adımı hatırla
+              </span>
+            </label>
           </div>
 
           <button
@@ -135,12 +219,11 @@ function JoinForm() {
               className="w-full py-3 px-4 bg-[#1e1f22] hover:bg-[#2b2d31] border border-[#313338] hover:border-[#5865f2]/50 text-xs font-semibold text-[#949ba4] hover:text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm group"
             >
               <Laptop className="w-4 h-4 text-[#5865f2]" />
-              <span>Voxa Masaüstü Uygulamasını İndir (v1.0.2)</span>
+              <span>Voxa Masaüstü Uygulamasını İndir (v1.0.3)</span>
               <Download className="w-4 h-4 text-[#949ba4] group-hover:text-white transition-colors ml-auto" />
             </a>
           </div>
         )}
-
       </div>
     </div>
   );
@@ -148,11 +231,13 @@ function JoinForm() {
 
 export default function HomePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#1e1f22] flex items-center justify-center text-white font-medium">
-        Yükleniyor...
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#1e1f22] flex items-center justify-center text-white font-medium">
+          Yükleniyor...
+        </div>
+      }
+    >
       <JoinForm />
     </Suspense>
   );

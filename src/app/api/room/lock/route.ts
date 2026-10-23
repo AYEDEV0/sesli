@@ -1,5 +1,5 @@
-import { RoomServiceClient } from "livekit-server-sdk";
 import { NextRequest, NextResponse } from "next/server";
+import { getAssignedAccountForRoom } from "@/lib/livekit-pool";
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,21 +13,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const apiKey = process.env.LIVEKIT_API_KEY;
-    const apiSecret = process.env.LIVEKIT_API_SECRET;
-    const wsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
-
-    if (!apiKey || !apiSecret || !wsUrl) {
-      return NextResponse.json(
-        { error: "Sunucu konfigürasyonu eksik." },
-        { status: 500 }
-      );
-    }
-
-    const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-    const roomService = new RoomServiceClient(httpUrl, apiKey, apiSecret);
-
     const cleanRoom = room.trim().toLowerCase();
+    const { roomService } = await getAssignedAccountForRoom(cleanRoom);
 
     // LiveKit Odasının metadata alanına kilit durumunu yazıyoruz
     const metadataString = JSON.stringify({ locked });

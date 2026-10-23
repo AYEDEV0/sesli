@@ -53,8 +53,19 @@ import {
   HeadphoneOff,
   Volume1,
   Activity,
+  Paperclip,
+  FileText,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
+import { playJoinSound, playLeaveSound, playMuteSound } from "@/lib/sounds";
+import {
+  P2PTransferManager,
+  registerLocalFile,
+  generateImageThumbnail,
+  formatFileSize,
+  SharedFileMeta,
+} from "@/lib/p2p-file-transfer";
 
 interface RoomContentProps {
   roomName: string;
@@ -119,6 +130,12 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [chatInput, setChatInput] = useState<string>("");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = useState<boolean>(false);
+
+  // P2P Dosya & Görsel Transfer Durumları
+  const p2pManagerRef = useRef<P2PTransferManager | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<Record<string, number>>({});
+  const [downloadingFileId, setDownloadingFileId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tarayıcı Ses Otomatik Oynatma Engel Takibi (Autoplay Policy)
   const [canPlayAudio, setCanPlayAudio] = useState<boolean>(true);
@@ -231,6 +248,80 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
       room.off(RoomEvent.RoomMetadataChanged, handleRoomUpdate);
     };
   }, [room]);
+
+  // Odaya Katılma ve Ayrılma Ses Efektleri (Discord-style Chimes)
+  useEffect(() => {
+    if (!room) return;
+
+    // Odaya ilk girişte katılma efekti
+    playJoinSound();
+
+    const handleParticipantConnected = () => {
+      playJoinSound();
+    };
+
+    const handleParticipantDisconnected = () => {
+      playLeaveSound();
+    };
+
+    room.on(RoomEvent.ParticipantConnected, handleParticipantConnected);
+    room.on(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+
+    return () => {
+      room.off(RoomEvent.ParticipantConnected, handleParticipantConnected);
+      room.off(RoomEvent.ParticipantDisconnected, handleParticipantDisconnected);
+    };
+  }, [room]);
+
+  // P2P WebRTC Sinyal ve Transfer Yöneticisi (LiveKit Kotası Harcamaz)
+  useEffect(() => {
+    if (!room) return;
+
+    const manager = new P2PTransferManager((targetIdentity, payload) => {
+      try {
+        const str = JSON.stringify({ voxaP2P: true, targetIdentity, ...payload });
+        const bytes = new TextEncoder().encode(str);
+        room.localParticipant.publishData(bytes, { reliable: true });
+      } catch (err) {
+        console.warn("P2P sinyal iletim hatası:", err);
+      }
+    });
+
+    p2pManagerRef.current = manager;
+
+    const handleDataReceived = (payload: Uint8Array, participant?: any) => {
+      try {
+        const text = new TextDecoder().decode(payload);
+        const data = JSON.parse(text);
+        if (!data.voxaP2P) return;
+
+        if (data.targetIdentity && data.targetIdentity !== localParticipant.identity) {
+          return;
+        }
+
+        const senderIdentity = participant?.identity || data.senderIdentity;
+
+        if (data.type === "P2P_FILE_REQUEST") {
+          manager.handleFileRequest(data.fileId, senderIdentity);
+        } else if (data.type === "P2P_OFFER") {
+          manager.handleOffer(data.fileId, senderIdentity, data.sdp);
+        } else if (data.type === "P2P_ANSWER") {
+          manager.handleAnswer(data.fileId, senderIdentity, data.sdp);
+        } else if (data.type === "P2P_CANDIDATE") {
+          manager.handleCandidate(data.fileId, senderIdentity, data.candidate);
+        }
+      } catch {
+        // ignore non-json data
+      }
+    };
+
+    room.on(RoomEvent.DataReceived, handleDataReceived);
+
+    return () => {
+      room.off(RoomEvent.DataReceived, handleDataReceived);
+      manager.cleanup();
+    };
+  }, [room, localParticipant.identity]);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
@@ -474,7 +565,9 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const toggleMic = async () => {
     try {
       if (isDeafened) setIsDeafened(false);
-      await localParticipant.setMicrophoneEnabled(!isMicrophoneEnabled);
+      const nextState = !isMicrophoneEnabled;
+      await localParticipant.setMicrophoneEnabled(nextState);
+      playMuteSound(!nextState);
     } catch (err) {
       console.error("Mikrofon değiştirilemedi:", err);
     }
@@ -596,6 +689,69 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
     } catch (err) {
       console.error("Mesaj gönderilemedi:", err);
     }
+  };
+
+  // P2P Dosya Yükleme / Paylaşma İşleyicisi
+  const handleUploadFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      let thumbnail: string | undefined;
+      if (file.type.startsWith("image/")) {
+        const thumb = await generateImageThumbnail(file);
+        if (thumb) thumbnail = thumb;
+      }
+
+      const meta = registerLocalFile(file, localParticipant.identity, username, thumbnail);
+      await sendChatMessage(`VOXA_FILE::${JSON.stringify(meta)}`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    } catch (err) {
+      console.error("Dosya paylaşım hatası:", err);
+    }
+  };
+
+  // Pano (Clipboard) Görsel Yapıştırma İşleyicisi (Ctrl+V)
+  const handlePasteInChat = async (e: React.ClipboardEvent<HTMLInputElement>) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      const file = e.clipboardData.files[0];
+      e.preventDefault();
+      try {
+        let thumbnail: string | undefined;
+        if (file.type.startsWith("image/")) {
+          const thumb = await generateImageThumbnail(file);
+          if (thumb) thumbnail = thumb;
+        }
+        const meta = registerLocalFile(file, localParticipant.identity, username, thumbnail);
+        await sendChatMessage(`VOXA_FILE::${JSON.stringify(meta)}`);
+      } catch (err) {
+        console.error("Pano görsel paylaşım hatası:", err);
+      }
+    }
+  };
+
+  // P2P Dosya İndirme İşleyicisi
+  const handleDownloadFile = (meta: SharedFileMeta) => {
+    if (!p2pManagerRef.current) return;
+    setDownloadingFileId(meta.id);
+    setDownloadProgress((prev) => ({ ...prev, [meta.id]: 0 }));
+
+    p2pManagerRef.current.requestDownload(
+      meta,
+      (percent) => {
+        setDownloadProgress((prev) => ({ ...prev, [meta.id]: percent }));
+      },
+      () => {
+        setDownloadProgress((prev) => ({ ...prev, [meta.id]: 100 }));
+        setTimeout(() => setDownloadingFileId(null), 2500);
+      },
+      (errorMsg) => {
+        alert(errorMsg || "P2P dosya indirme başarısız oldu.");
+        setDownloadingFileId(null);
+      }
+    );
   };
 
   return (
@@ -1003,6 +1159,14 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     minute: "2-digit",
                   });
 
+                  const isFileMessage = msg.message.startsWith("VOXA_FILE::");
+                  let fileMeta: SharedFileMeta | null = null;
+                  if (isFileMessage) {
+                    try {
+                      fileMeta = JSON.parse(msg.message.replace("VOXA_FILE::", ""));
+                    } catch {}
+                  }
+
                   return (
                     <div
                       key={idx}
@@ -1014,15 +1178,88 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                         </span>
                         <span className="text-[10px] text-[#949ba4] select-text">{formattedTime}</span>
                       </div>
-                      <div
-                        className={`p-2.5 rounded-xl text-xs max-w-[90%] break-words select-text cursor-text ${
-                          isMe
-                            ? "bg-[#5865f2] text-white rounded-tr-none"
-                            : "bg-[#313338] text-[#f2f3f5] rounded-tl-none border border-[#1e1f22]"
-                        }`}
-                      >
-                        {msg.message}
-                      </div>
+
+                      {fileMeta ? (
+                        <div
+                          className={`p-3 rounded-xl text-xs max-w-[92%] select-text ${
+                            isMe
+                              ? "bg-[#5865f2] text-white rounded-tr-none"
+                              : "bg-[#313338] text-[#f2f3f5] rounded-tl-none border border-[#1e1f22]"
+                          }`}
+                        >
+                          {/* Resim Önizleme (Varsa) */}
+                          {fileMeta.isImage && fileMeta.thumbnail && (
+                            <div className="mb-2 max-w-[260px] rounded-lg overflow-hidden border border-black/20 bg-black/40">
+                              <img
+                                src={fileMeta.thumbnail}
+                                alt={fileMeta.name}
+                                className="w-full h-auto max-h-[200px] object-contain rounded-lg"
+                              />
+                            </div>
+                          )}
+
+                          {/* Dosya Bilgi Kartı */}
+                          <div className="flex items-center gap-2.5 bg-black/20 p-2.5 rounded-lg border border-white/10">
+                            <div className="w-9 h-9 bg-white/10 rounded-lg flex items-center justify-center flex-shrink-0">
+                              {fileMeta.isImage ? (
+                                <ImageIcon className="w-5 h-5 text-white" />
+                              ) : (
+                                <FileText className="w-5 h-5 text-white" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0 pr-1">
+                              <p className="font-bold text-xs truncate">{fileMeta.name}</p>
+                              <p className="text-[10px] opacity-75">{formatFileSize(fileMeta.size)} • P2P</p>
+                            </div>
+
+                            {/* İndir Butonu */}
+                            {isMe ? (
+                              <span className="text-[10px] font-semibold opacity-80 px-2 py-1 bg-white/10 rounded-md whitespace-nowrap">
+                                Paylaşıldı
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={downloadingFileId === fileMeta.id}
+                                onClick={() => handleDownloadFile(fileMeta!)}
+                                className="px-2.5 py-1.5 bg-[#23a55a] hover:bg-[#1f934f] text-white text-[11px] font-bold rounded-lg transition-all flex items-center gap-1.5 shadow cursor-pointer disabled:opacity-50 flex-shrink-0"
+                              >
+                                {downloadingFileId === fileMeta.id ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>%{downloadProgress[fileMeta.id] || 0}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>İndir</span>
+                                  </>
+                                )}
+                              </button>
+                            )}
+                          </div>
+
+                          {/* İndirme İlerleme Çubuğu */}
+                          {downloadingFileId === fileMeta.id && (
+                            <div className="w-full bg-black/30 rounded-full h-1.5 mt-2 overflow-hidden">
+                              <div
+                                className="bg-[#23a55a] h-full transition-all duration-150"
+                                style={{ width: `${downloadProgress[fileMeta.id] || 0}%` }}
+                              />
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div
+                          className={`p-2.5 rounded-xl text-xs max-w-[90%] break-words select-text cursor-text ${
+                            isMe
+                              ? "bg-[#5865f2] text-white rounded-tr-none"
+                              : "bg-[#313338] text-[#f2f3f5] rounded-tl-none border border-[#1e1f22]"
+                          }`}
+                        >
+                          {msg.message}
+                        </div>
+                      )}
                     </div>
                   );
                 })
@@ -1030,21 +1267,37 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
               <div ref={chatBottomRef} />
             </div>
 
-            {/* Chat Input Form */}
+            {/* Chat Input Form (P2P Dosya & Görsel Destekli) */}
             <form
               onSubmit={handleSendChat}
               className="p-3 bg-[#313338] border-t border-[#1e1f22] flex items-center gap-2"
             >
               <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleUploadFile}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2 text-[#949ba4] hover:text-white hover:bg-[#1e1f22] rounded-xl transition-all cursor-pointer flex-shrink-0"
+                title="Dosya veya Görsel Gönder (P2P - Sunucu/Kota Harcamaz)"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+
+              <input
                 type="text"
                 value={chatInput}
                 onChange={(e) => setChatInput(e.target.value)}
-                placeholder="Mesaj yazın..."
+                onPaste={handlePasteInChat}
+                placeholder="Mesaj yazın veya görsel yapıştırın..."
                 className="flex-1 bg-[#1e1f22] border border-[#2b2d31] focus:border-[#5865f2] px-3 py-2 rounded-xl text-xs text-white placeholder-[#949ba4] outline-none transition-all"
               />
               <button
                 type="submit"
-                className="p-2 bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-xl transition-all cursor-pointer shadow disabled:opacity-50"
+                className="p-2 bg-[#5865f2] hover:bg-[#4752c4] text-white rounded-xl transition-all cursor-pointer shadow disabled:opacity-50 flex-shrink-0"
                 disabled={!chatInput.trim()}
               >
                 <Send className="w-4 h-4" />
@@ -1360,7 +1613,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">Voxa Masaüstü Uygulaması</span>
                       <span className="bg-[#23a55a]/20 text-[#23a55a] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#23a55a]/30">
-                        v1.0.2 (Son Sürüm)
+                        v1.0.3 (Son Sürüm)
                       </span>
                     </div>
                     <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
