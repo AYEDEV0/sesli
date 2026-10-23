@@ -1,110 +1,128 @@
-# 🚀 Voxa - Gelecek Geliştirme Yol Haritası ve Yapılacaklar (Roadmap & To-Do)
+# 🚀 Voxa - Geliştirme Durumu, Yapılanlar ve Gelecek Yol Haritası (Roadmap)
 
-Bu belge, projeye daha sonra devam edildiğinde sırasıyla hayata geçirilecek yeni özellikleri, teknik uygulama adımlarını ve kontrol listesini (checklist) içerir.
-
----
-
-## 📌 Öncelikli Yapılacaklar Listesi (Sprint 1)
-
-### 1. 🔍 Sohbette Görsellere Tıklayınca Büyütme (Lightbox Modal)
-- [ ] **Durum:** Bekliyor
-- **Hedef:** Sohbet akışında paylaşılan görsellere veya küçük resimlere (thumbnails) tıklandığında tam ekran, karartmalı bir Lightbox modalı açılması.
-- **Teknik Adımlar:**
-  1. `src/app/[roomName]/page.tsx` içerisine `selectedPreviewImage: string | null` state'i ekleyin.
-  2. Sohbetteki resim kartına `onClick={() => setSelectedPreviewImage(msg.thumbnail || msg.fileUrl)}` ekleyin.
-  3. Açılan modalda:
-     - `fixed inset-0 z-50 bg-black/85 backdrop-blur-md` ile şık bir arka plan karartması.
-     - Sağ üstte kapatma butonu (`X`) ve `Escape` tuşu dinleyicisi.
-     - Resmi orijinal en-boy oranıyla ortalama (`max-h-[90vh] max-w-[90vw] object-contain`).
-     - Altta "Orijinalini İndir" butonu.
+Bu belge; Voxa projesinde bugüne kadar tamamlanan tüm mimari yenilikleri, teknik çözümleri ve projeye devam edildiğinde sırasıyla hayata geçirilecek yeni özellikleri, teknik uygulama adımlarını ve kontrol listesini (checklist) içerir.
 
 ---
 
-### 2. 🛑 P2P Dosya İndirmesini İptal Etme (Cancel Ongoing Download)
-- [ ] **Durum:** Bekliyor
-- **Hedef:** Kullanıcı yüksek boyutlu bir dosyayı indirmeye başladıktan sonra vazgeçtiğinde transferi tek tıkla durdurabilmesi.
-- **Teknik Adımlar:**
-  1. `src/lib/p2p-file-transfer.ts` içine `cancelTransfer(fileId: string)` metodunu ekleyin:
-     ```typescript
-     export function cancelTransfer(fileId: string) {
-       const peer = activePeers[fileId];
-       if (peer) {
-         peer.dataChannel?.close();
-         peer.pc.close();
-         delete activePeers[fileId];
-       }
-       // Bellekte biriken chunk dizisini temizle
-       delete downloadBuffers[fileId];
-     }
-     ```
-  2. Karşı tarafa LiveKit üzerinden `{ type: "p2p-cancel", fileId }` sinyali göndererek göndericinin veri basmasını durdurun.
-  3. `[roomName]/page.tsx` içindeki indirme ilerleme çubuğunun yanına kırmızı bir "İptal Et" (`X`) butonu ekleyin.
-  4. İptal edildiğinde transfer durumunu `"cancelled"` yapıp kullanıcıya "İndirme iptal edildi" uyarısı verin.
+## ✅ Tamamlanan Özellikler ve Hata Çözümleri (Son Güncelleme)
+
+### 1. 🔊 Ekran ve Pencere Yayınlarında Ses İletimi Düzeltildi
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - **Tarayıcı Tarafı:** `getDisplayMedia` parametrelerine `systemAudio: "include"` ve `suppressLocalAudioPlayback: false` eklendi.
+  - **Ayrı HTMLAudioElement:** `RoomAudioRenderer`'a bağımlı kalmadan, `ScreenShareAudio` track'ini doğrudan gizli bir `<audio ref={screenShareAudioElRef} playsInline autoPlay />` elementine `track.attach()` ile bağlayan özel bir dinleme mekanizması kuruldu.
+  - **Abonelik Garantisi:** Uzak ekran ses track'i odaya düştüğü anda `setSubscribed(true)` tetiklenerek sesin beklemeden çalması sağlandı.
+  - **Yankı Koruması:** Yayın açan kişinin kendi ekran sesini kendi hoparlöründen tekrar duymaması için `isLocal` filtrelemesi uygulandı.
+
+### 2. 💻 Masaüstü (Electron) Belirli Pencere/Uygulama Paylaşımında Ses Aktarımı
+- [x] **Durum:** Tamamlandı
+- **Sorun:** Masaüstü uygulamasında kullanıcı tam ekran yerine belirli bir pencereyi (Spotify, oyun, VLC, YouTube penceresi vb.) paylaştığında ses karşıya gitmiyordu (`audio: undefined` oluyordu) ve seçilen pencere yerine varsayılan ilk monitör paylaşılıyordu.
+- **Yapılanlar:**
+  - `electron/preload.js` içine `selectDesktopSource(sourceId)` IPC köprüsü eklendi.
+  - `electron/main.js` içine `pendingDesktopSourceId` hafızası eklendi. Kullanıcı arayüzde hangi pencereye tıklarsa Electron `desktopCapturer` tam olarak o pencereyi yakalar.
+  - `setDisplayMediaRequestHandler` içerisinde ekran veya pencere fark etmeksizin `audio: "loopback"` her zaman aktif kılındı. Windows'un WASAPI loopback ses sistemi sayesinde paylaşılan uygulamanın/pencerenin sesi karşıya eksiksiz iletiliyor.
+
+### 3. 📺 Çoklu Yayın Desteği & "Yayını İzle / Yayından Ayrıl" Seçenekleri
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - Odada birden fazla kişi aynı anda ekran paylaşabilir hale getirildi (`screenShareTracks`).
+  - Sahnede yayıncıların isimleriyle şık bir sekme çubuğu eklendi; kullanıcılar tek tıkla yayınlar arasında geçiş yapabilir.
+  - **Yayından Ayrıl Butonu:** Sahnede ve katılımcı kartında yer alan butonla kullanıcı sesli odadan kopmadan video akışını durdurarak sadece ses moduna geçebilir (bilgisayar donanımını yormaz, kota tasarrufu sağlar).
+  - **Yayını İzle Butonu:** Yayını izlemeyen kullanıcılara sahnede yüzen *"1 Aktif Yayın Var — Yayını İzle"* hap bildirimi ve katılımcı listesinde *"İzle"* butonu eklendi.
+
+### 4. ⚡ AV1 Video Codec Entegrasyonu (Kota Tasarrufu)
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - Hem `<LiveKitRoom>`'un `publishDefaults` ayarlarına hem de `toggleScreenShare` ekran paylaşım seçeneklerine `videoCodec: "av1"` ve `backupCodec: true` (VP8 geri dönüş desteği) tanımlandı.
+  - AV1, VP8 ve H.264'e göre %30-%50 daha az bant genişliği tüketir. LiveKit Cloud aylık kota tüketimini ciddi oranda geciktirir.
+
+### 5. 👤 Kullanıcı Avatar Sistemi (Kalıcı LocalStorage + Gerçek Zamanlı Senkronizasyon)
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - `src/lib/avatars.ts` yardımcı modülü oluşturuldu: 6 modern SVG hazır avatar + HTML5 Canvas ile seçilen fotoğrafları 128x128 WebP/JPEG formatında sıkıştıran fonksiyon (`compressAndCropAvatar`).
+  - Avatar kullanıcının cihazında `localStorage` (`voxa_user_avatar`) içinde saklanır; sayfa yenilense de uygulama kapatılsa da kullanıcı hatırlanır.
+  - **Yetki Çözümü:** `livekit-pool.ts` içinde `AccessToken` grants alanına `canUpdateOwnMetadata: true` yetkisi eklendi (bu yetki olmadan LiveKit Cloud istemci metadata güncellemelerini reddediyordu).
+  - **0 Gecikmeli Senkronizasyon:** Avatar seçildiği an ("Kaydet" butonuna basmaya gerek kalmadan) hem LiveKit metadata'sına yazılır hem de DataChannel (`VOXA_AVATAR`) ile anında tüm katılımcılara fırlatılır. Yeni katılanlar için `VOXA_AVATAR_REQ` otomatik talep döngüsü kuruldu.
+  - Katılımcı kartlarında, sol alttaki kullanıcı profil çubuğunda ve sohbet mesaj balonlarında dinamik avatar gösterimi sağlandı.
+
+### 6. 🔍 Sohbette Görsellere Tıklayınca Büyütme (Lightbox Modal)
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - Sohbette paylaşılan veya panodan yapıştırılan (Ctrl+V) resimlerin küçük önizlemesine tıklandığında tam ekran, kararık arka planlı (`backdrop-blur-md`) bir Lightbox modalı açılması sağlandı.
+  - Modal üzerinde orijinal görseli indirme butonu, kapatma (`X`) butonu ve `Esc` tuşu ile kapatma desteği entegre edildi.
+
+### 7. 🛑 P2P Dosya İndirmesini İptal Etme
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - `src/lib/p2p-file-transfer.ts` içine `cancelTransfer(fileId, peerIdentity)` metodu eklendi.
+  - Karşı tarafa `P2P_CANCEL` sinyali gönderilerek gönderim durdurulur ve WebRTC PeerConnection ile tampon bellekler serbest bırakılır.
+  - Sohbette devam eden indirme kartının yanına kırmızı renkli bir İptal (`X`) butonu eklendi.
+
+### 8. 🩹 Yerel (Aynı Bilgisayarda) P2P Dosya İndirme Hata Çözümü
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - Aynı bilgisayarda iki sekme ile test edildiğinde WebRTC host ICE adaylarının 5-10 ms içinde gelmesi nedeniyle `pc.remoteDescription` hazır olmadan çağrılan `addIceCandidate` çağrılarının düşmesi engellendi (`pendingCandidates` tampon kuyruğu).
+  - Aynı tarayıcı oturumunda yapılan testler için anında yerel bellekten (`localFilesStore`) doğrudan indirme (Blob fallback) eklendi.
 
 ---
 
-### 3. 👤 Kullanıcı Avatar Sistemi (Avatar Selection & Badges)
-- [ ] **Durum:** Bekliyor
-- **Hedef:** Kullanıcıların rumuzlarının yanına anime, 3D, retro veya sevimli ikonlardan oluşan bir avatar seçebilmesi; bu avatarın hem sol katılımcı listesinde hem de sohbette görünmesi.
-- **Teknik Adımlar:**
-  1. **Avatar Kütüphanesi:**
-     - `public/avatars/` klasörüne hazır 8-12 adet SVG/PNG avatar yerleştirin (veya DiceBear SVG URL motoru kullanın: `https://api.dicebear.com/7.x/bottts/svg?seed=...`).
-  2. **Ana Sayfa Seçici:**
-     - `src/app/page.tsx` giriş formunda Rumuz kutusunun yanına mini avatar önizleme dairesi ve tıklanınca açılan avatar seçim ızgarası ekleyin.
-     - Seçilen avatar ID'sini `localStorage.setItem('voxa_user_avatar', avatarId)` ile saklayın.
-  3. **Oda İçi Senkronizasyon:**
-     - Kullanıcı odaya bağlandığında LiveKit LocalParticipant metadata'sını güncelleyin:
-       ```typescript
-       room.localParticipant.setMetadata(JSON.stringify({
-         avatar: userAvatar,
-         joinedAt: Date.now()
-       }));
-       ```
-  4. **Arayüzde Gösterme:**
-     - `[roomName]/page.tsx` içerisindeki katılımcı kartlarında ve sohbet balonlarında baş harf yerine `<img src={participantMetadata.avatar} />` bileşenini render edin.
+## 🔮 Gelecek Geliştirme Yol Haritası ve Yapılacaklar (Sprint 2 & 3)
+
+Projeye bir sonraki aşamada devam edildiğinde sırasıyla uygulanacak özellikler:
 
 ---
 
-## 🔮 Orta & Uzun Vadeli Yapılacaklar (Sprint 2)
-
-### 4. 🖼️ Yüzen Yayın Penceresi (Picture-in-Picture / Floating Window)
+### 1. 🖼️ Yüzen Yayın Penceresi (Picture-in-Picture / Floating Window)
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Oyun oynarken veya tarayıcı simge durumundayken arkadaşının ekran yayınını ekranın köşesinde küçük, her zaman üstte bir pencerede izleme.
-- **Uygulama:**
-  - **Web:** `documentPictureInPicture.requestWindow({ width: 420, height: 240 })`.
-  - **Electron:** `BrowserWindow` (`alwaysOnTop: true, frame: false`).
+- **Hedef:** Kullanıcı başka bir uygulamada veya oyundayken arkadaşının ekran yayınını ekranın sağ alt köşesinde her zaman üstte (Always on Top) küçük bir pencerede izleyebilmesi.
+- **Uygulama Adımları:**
+  - **Web:** Modern tarayıcılar için `documentPictureInPicture.requestWindow({ width: 420, height: 240 })` API'si.
+  - **Electron:** `electron/main.js` içinde `createPiPWindow(videoTrack)` fonksiyonu; `BrowserWindow({ width: 420, height: 240, alwaysOnTop: true, frame: false })`.
+  - **UI Butonu:** Sahne araç çubuğuna bir "Resim İçinde Resim (PiP)" butonu eklenecek.
 
 ---
 
-### 5. 📊 Anlık Ağ ve Yayın İstatistikleri (Diagnostics Overlay)
+### 2. 🎙️ Bas-Konuş (Push-to-Talk) Modu ve Kısayol Tuşu
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Ping (ms), FPS, Paket Kaybı (Packet Loss) ve Bitrate gösteren yarı saydam HUD rozeti.
-- **Uygulama:** LiveKit `participant.getPublisherStats()` ve WebRTC `getStats()` verilerini 2 saniyede bir poll etme.
+- **Hedef:** Kullanıcıların açık mikrofon yerine belirledikleri bir tuşa (Örn: `Space`, `V` veya fare yan tuşu) basılı tuttukları sürece mikrofonlarının açık kalması.
+- **Uygulama Adımları:**
+  - **Web:** `window.addEventListener('keydown', ...)` ve `keyup` ile bas-konuş tuşu takibi.
+  - **Electron (Masaüstü):** Oyun oynarken pencere odakta olmasa bile bas-konuşun çalışabilmesi için `electron/main.js` içine `globalShortcut.register(...)` veya `uIOhook` kütüphanesi entegrasyonu.
+  - **Ayarlar Menüsü:** Ayarlar penceresine "Giriş Modu: Açık Mikrofon / Bas-Konuş" seçeneği ve tuş atama alanı.
 
 ---
 
-### 6. 🎙️ Bas-Konuş (Push-to-Talk) Modu
+### 3. 📊 Anlık Ağ ve Yayın İstatistikleri (Diagnostics HUD)
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Mikrofonun sadece belirlenen tuşa (Örn: `Space` veya `V`) basılı tutulduğunda açılması.
-- **Uygulama:** Web için `keydown`/`keyup` event listener; Electron masaüstü için arka planda çalışan global kısayol (`globalShortcut`).
+- **Hedef:** Kullanıcıların görüşme kalitesini görebilmesi için ping (ms), FPS, paket kaybı (% packet loss) ve anlık bitrate değerlerini gösteren yarı saydam bir HUD rozeti.
+- **Uygulama Adımları:**
+  - LiveKit `room.engine.client.on('connectionQualityChanged', ...)` ve WebRTC `peerConnection.getStats()` verilerini 2 saniyede bir okuma.
+  - Sahnenin sağ üst köşesine tıklanabilir küçük bir ağ çubuğu ikonu ekleme; tıklandığında açılan mini istatistik paneli.
 
 ---
 
-### 7. 👑 Oda Yöneticisi & Moderasyon Yetkileri (Host Controls)
+### 4. 👑 Oda Yöneticisi & Moderasyon Yetkileri (Host / Admin Controls)
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Odayı kuran kişinin diğer katılımcıları susturabilmesi (Server Mute) veya odadan atabilmesi (Kick).
-- **Uygulama:** LiveKit Server SDK `RoomServiceClient.mutePublishedTrack()` ve `RoomServiceClient.removeParticipant()`.
+- **Hedef:** Odayı ilk açan veya yönetici olan kullanıcının odadaki diğer kişileri toplu susturabilmesi (Server Mute) veya odadan çıkarabilmesi (Kick).
+- **Uygulama Adımları:**
+  - `src/app/api/room/admin/route.ts` oluşturulacak.
+  - `livekit-server-sdk` içindeki `RoomServiceClient.mutePublishedTrack()` ve `RoomServiceClient.removeParticipant()` metotları kullanılacak.
+  - Katılımcı kartına yöneticiye özel üç nokta menüsü ("Sustur", "Odadan At") eklenecek.
 
 ---
 
-### 8. 🎨 Özel Tema Seçenekleri (Theme Switcher)
+### 5. 🎨 Özel Tema Seçenekleri (Theme Switcher)
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Midnight Dark, Cyberpunk Neon, Emerald Green renk paletleri arasında geçiş yapabilme.
-- **Uygulama:** Tailwind / CSS Custom Variables tabanlı tema sağlayıcı (`ThemeProvider`).
+- **Hedef:** Kullanıcıların arayüzü Discord Dark (`#1e1f22`), Midnight AMOLED (`#000000`), Cyberpunk Purple (`#0f051d`) veya Emerald Dark temaları arasında kişiselleştirebilmesi.
+- **Uygulama Adımları:**
+  - CSS değişkenleri tabanlı tema sistemi (`--bg-primary`, `--bg-secondary`, `--accent`).
+  - Ayarlar menüsüne tema önizleme kartları ekleme ve `localStorage.setItem('voxa_theme', ...)` ile kaydetme.
 
 ---
 
-### 9. 🔒 Uçtan Uca Şifreleme (E2EE)
+### 6. 🔒 Uçtan Uca Şifreleme (E2EE)
 - [ ] **Durum:** Bekliyor
-- **Hedef:** Sıfır bilgi prensibiyle WebRTC paketlerinin LiveKit sunucusu tarafından bile çözülemeyeceği tam şifreleme.
-- **Uygulama:** `@livekit/client` yerleşik E2EE Web Worker motoru.
+- **Hedef:** Hassas görüşmeler için LiveKit Cloud sunucusu dahil hiç kimsenin ses ve video paketlerini araya girip dinleyemeyeceği istemciden istemciye şifreleme.
+- **Uygulama Adımları:**
+  - `@livekit/client` yerleşik `E2EEManager` ve Web Worker motoru kullanılacak.
+  - Odaya girişte opsiyonel bir "Şifreleme Parolası (Passphrase)" alanı eklenecek.
