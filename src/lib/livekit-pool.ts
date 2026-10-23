@@ -23,59 +23,62 @@ const clean = (val?: string) => (val ? val.replace(/^["']|["']$/g, "").trim() : 
 export function getLiveKitAccounts(): LiveKitAccount[] {
   const accounts: LiveKitAccount[] = [];
 
-  // 1. Numaralandırılmış hesapları tara (1'den 10'a kadar)
-  for (let i = 1; i <= 10; i++) {
-    const rawApiKey = process.env[`LIVEKIT_API_KEY_${i}`];
-    const rawApiSecret = process.env[`LIVEKIT_API_SECRET_${i}`];
-    const rawWsUrl = process.env[`LIVEKIT_URL_${i}`] || process.env[`NEXT_PUBLIC_LIVEKIT_URL_${i}`];
-    const isExhaustedEnv = clean(process.env[`LIVEKIT_EXHAUSTED_${i}`]) === "true";
+  // 1. Hesap (Eski Hesap - Kotası Dolu)
+  const k1 = clean(process.env.LIVEKIT_API_KEY_1 || process.env.LIVEKIT_API_KEY);
+  const s1 = clean(process.env.LIVEKIT_API_SECRET_1 || process.env.LIVEKIT_API_SECRET);
+  const u1 = clean(process.env.LIVEKIT_URL_1 || process.env.NEXT_PUBLIC_LIVEKIT_URL_1 || process.env.NEXT_PUBLIC_LIVEKIT_URL);
+  const isDead1 =
+    clean(process.env.LIVEKIT_EXHAUSTED_1) === "true" ||
+    clean(process.env.LIVEKIT_EXHAUSTED) === "true" ||
+    k1 === "APIMeQAiA25GGbH" ||
+    u1.includes("sesli-rq0ve8k0");
 
-    const apiKey = clean(rawApiKey);
-    const apiSecret = clean(rawApiSecret);
-    const wsUrl = clean(rawWsUrl);
-
-    if (apiKey && apiSecret && wsUrl) {
-      const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-      accounts.push({
-        id: `account_${i}`,
-        name: `LiveKit API #${i}`,
-        apiKey,
-        apiSecret,
-        wsUrl,
-        httpUrl,
-        isExhausted: isExhaustedEnv || !!inMemoryExhaustedState[`account_${i}`],
-      });
-    }
+  if (k1 && s1 && u1) {
+    accounts.push({
+      id: "account_1",
+      name: "LiveKit API #1",
+      apiKey: k1,
+      apiSecret: s1,
+      wsUrl: u1,
+      httpUrl: u1.replace(/^wss:/, "https:").replace(/^ws:/, "http:"),
+      isExhausted: isDead1 || !!inMemoryExhaustedState["account_1"],
+    });
   }
 
-  // 2. Eğer numaralandırılmış bulunamazsa varsayılan tekil env'leri yükle
-  if (accounts.length === 0) {
-    const rawApiKey = process.env.LIVEKIT_API_KEY;
-    const rawApiSecret = process.env.LIVEKIT_API_SECRET;
-    const rawWsUrl = process.env.NEXT_PUBLIC_LIVEKIT_URL;
+  // 2. Hesap (Aktif)
+  const k2 = clean(process.env.LIVEKIT_API_KEY_2);
+  const s2 = clean(process.env.LIVEKIT_API_SECRET_2);
+  const u2 = clean(process.env.LIVEKIT_URL_2 || process.env.NEXT_PUBLIC_LIVEKIT_URL_2);
+  const isDead2 = clean(process.env.LIVEKIT_EXHAUSTED_2) === "true";
 
-    const apiKey = clean(rawApiKey);
-    const apiSecret = clean(rawApiSecret);
-    const wsUrl = clean(rawWsUrl);
+  if (k2 && s2 && u2) {
+    accounts.push({
+      id: "account_2",
+      name: "LiveKit API #2",
+      apiKey: k2,
+      apiSecret: s2,
+      wsUrl: u2,
+      httpUrl: u2.replace(/^wss:/, "https:").replace(/^ws:/, "http:"),
+      isExhausted: isDead2 || !!inMemoryExhaustedState["account_2"],
+    });
+  }
 
-    const isExhaustedEnv =
-      clean(process.env.LIVEKIT_EXHAUSTED) === "true" ||
-      clean(process.env.LIVEKIT_EXHAUSTED_1) === "true" ||
-      apiKey === "APIMeQAiA25GGbH" ||
-      wsUrl.includes("sesli-rq0ve8k0");
+  // 3. Hesap (Aktif)
+  const k3 = clean(process.env.LIVEKIT_API_KEY_3);
+  const s3 = clean(process.env.LIVEKIT_API_SECRET_3);
+  const u3 = clean(process.env.LIVEKIT_URL_3 || process.env.NEXT_PUBLIC_LIVEKIT_URL_3);
+  const isDead3 = clean(process.env.LIVEKIT_EXHAUSTED_3) === "true";
 
-    if (apiKey && apiSecret && wsUrl) {
-      const httpUrl = wsUrl.replace(/^wss:/, "https:").replace(/^ws:/, "http:");
-      accounts.push({
-        id: "account_default",
-        name: "LiveKit Varsayılan API",
-        apiKey,
-        apiSecret,
-        wsUrl,
-        httpUrl,
-        isExhausted: isExhaustedEnv || !!inMemoryExhaustedState["account_default"],
-      });
-    }
+  if (k3 && s3 && u3) {
+    accounts.push({
+      id: "account_3",
+      name: "LiveKit API #3",
+      apiKey: k3,
+      apiSecret: s3,
+      wsUrl: u3,
+      httpUrl: u3.replace(/^wss:/, "https:").replace(/^ws:/, "http:"),
+      isExhausted: isDead3 || !!inMemoryExhaustedState["account_3"],
+    });
   }
 
   return accounts;
@@ -171,26 +174,6 @@ export async function getAssignedAccountForRoom(roomName: string): Promise<{
   for (const acc of allAccounts) {
     if (await isAccountHealthy(acc)) {
       healthyAccounts.push(acc);
-    }
-  }
-
-  // 2.1 Adım: Eğer 2 ve 3 de dahil tüm hesaplar dolu görünüyorsa,
-  // pes etmeden önce 1. hesap dahil tüm havuzu canlı teste tabi tut (Ay başı yenilenmiş olabilir)
-  if (healthyAccounts.length === 0) {
-    console.log("[LiveKit Pool] Tüm hesaplar dolu görünüyor. Hesap canlandırma taraması yapılıyor...");
-    for (const acc of allAccounts) {
-      try {
-        const testClient = new RoomServiceClient(acc.httpUrl, acc.apiKey, acc.apiSecret);
-        await testClient.listRooms();
-        // 429 veya kota hatası vermeden listRooms başarılı olduysa kotası yenilenmiştir!
-        inMemoryExhaustedState[acc.id] = false;
-        await kvDel(`quota_exhausted:${acc.id}`);
-        healthyAccounts.push({ ...acc, isExhausted: false });
-        console.log(`[LiveKit Pool] ${acc.name} kotasının sıfırlandığı doğrulandı ve tekrar havuza alındı!`);
-        break; // İlk çalışan hesabı bulduğumuzda hemen devreye al
-      } catch (err) {
-        // Hâlâ 429 ise sonraki hesaba bak
-      }
     }
   }
 
