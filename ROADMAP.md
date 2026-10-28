@@ -64,6 +64,17 @@ Bu belge; Voxa projesinde bugüne kadar tamamlanan tüm mimari yenilikleri, tekn
   - Aynı bilgisayarda iki sekme ile test edildiğinde WebRTC host ICE adaylarının 5-10 ms içinde gelmesi nedeniyle `pc.remoteDescription` hazır olmadan çağrılan `addIceCandidate` çağrılarının düşmesi engellendi (`pendingCandidates` tampon kuyruğu).
   - Aynı tarayıcı oturumunda yapılan testler için anında yerel bellekten (`localFilesStore`) doğrudan indirme (Blob fallback) eklendi.
 
+### 9. 💾 Masaüstü (Electron) ve Web Windows Gezgini ile Dosya & Görsel Kaydetme (Farklı Kaydet)
+- [x] **Durum:** Tamamlandı
+- **Yapılanlar:**
+  - **%100 Takılı Kalma (EOF) Hatası Düzeltildi:** `p2p-file-transfer.ts` içerisinde gönderici döngüsünün dosya sonuna ulaştığında `onbufferedamountlow` eşiğini atlaması nedeniyle `EOF` mesajının karşıya hiç iletilmemesi ve alıcı tarafın %100'de takılı kalarak dosya kaydetme diyaloğunu tetikleyememesi kökten çözüldü.
+  - **Sıralı Async Gönderim & Backpressure:** Asenkron `FileReader` yerine `slice.arrayBuffer()` ile paketlerin sıralı gitmesi ve DataChannel tamponu (`bufferedAmount`) boşalana kadar beklenip sonrasında güvenle `EOF` fırlatılması sağlandı.
+  - **Çift Koruma (Otomatik Finalize):** Alıcı tarafta `receivedBytes >= fileMeta.size` olduğunda EOF sinyali düşse bile 400ms içinde aktarım otomatik tamamlanıp Windows Farklı Kaydet diyaloğu açılır.
+  - **Windows Gezgini Native Kaydetme (Electron):** `electron/main.js` içine `save-file` IPC işleyicisi entegre edilerek `dialog.showSaveDialog` ile yerel "Farklı Kaydet" penceresi açılır, dosya uzantı filtreleri eklenir ve dosya diske yazıldıktan sonra `shell.showItemInFolder` ile Windows Gezgini'nde otomatik gösterilir.
+  - **Web Chromium File System Access API:** Standart tarayıcılarda (Chrome, Edge vb.) `window.showSaveFilePicker` ile kullanıcının dosyanın kaydedileceği klasörü ve ismi bizzat seçebilmesi sağlandı.
+  - **Lightbox Orijinal Görsel İndirme:** Lightbox büyütme penceresindeki indirme butonu, 320px önizleme yerine tam boyutlu orijinal görseli indirecek şekilde güncellendi.
+
+
 ---
 
 ## 🔮 Gelecek Geliştirme Yol Haritası ve Yapılacaklar (Sprint 2 & 3)

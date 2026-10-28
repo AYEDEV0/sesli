@@ -8,4 +8,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openExternal: (url) => ipcRenderer.invoke("open-external", url),
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   clipboardWriteText: (text) => ipcRenderer.invoke("clipboard-write-text", text),
+  saveFile: (data) => ipcRenderer.invoke("save-file", data),
 });

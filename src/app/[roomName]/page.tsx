@@ -65,9 +65,11 @@ import { playJoinSound, playLeaveSound, playMuteSound } from "@/lib/sounds";
 import {
   P2PTransferManager,
   registerLocalFile,
+  getLocalFile,
   generateImageThumbnail,
   formatFileSize,
   SharedFileMeta,
+  saveBlobToDisk,
 } from "@/lib/p2p-file-transfer";
 import {
   PRESET_AVATARS,
@@ -148,7 +150,12 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Lightbox Modal Durumu
-  const [lightboxImage, setLightboxImage] = useState<{ url: string; name: string } | null>(null);
+  const [lightboxImage, setLightboxImage] = useState<{
+    url: string;
+    name: string;
+    fileId?: string;
+    meta?: SharedFileMeta;
+  } | null>(null);
 
   // Avatar Yönetimi Durumu
   const [roomAvatar, setRoomAvatar] = useState<string | null>(null);
@@ -1067,7 +1074,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
       },
       () => {
         setDownloadProgress((prev) => ({ ...prev, [meta.id]: 100 }));
-        setTimeout(() => setDownloadingFileId(null), 2500);
+        setTimeout(() => setDownloadingFileId(null), 1200);
       },
       (errorMsg) => {
         alert(errorMsg || "P2P dosya indirme başarısız oldu.");
@@ -1087,6 +1094,34 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
       delete copy[fileId];
       return copy;
     });
+  };
+
+  // Lightbox Görselini İndirme İşleyicisi (Web ve Electron Uyumlu, Farklı Kaydet Destekli)
+  const handleDownloadLightboxImage = async () => {
+    if (!lightboxImage) return;
+    try {
+      // 1. Dosya yerel bellekte varsa tam kaliteli orijinal dosyayı diske kaydet
+      if (lightboxImage.fileId) {
+        const local = getLocalFile(lightboxImage.fileId);
+        if (local) {
+          await saveBlobToDisk(local, lightboxImage.name);
+          return;
+        }
+      }
+
+      // 2. Karşı taraftan tam dosyayı P2P üzerinden indirme talebi başlat
+      if (lightboxImage.meta && p2pManagerRef.current) {
+        handleDownloadFile(lightboxImage.meta);
+        return;
+      }
+
+      // 3. Fallback: Mevcut URL / thumbnail üzerinden kaydet
+      const res = await fetch(lightboxImage.url);
+      const blob = await res.blob();
+      await saveBlobToDisk(blob, lightboxImage.name);
+    } catch (err) {
+      console.error("Lightbox görsel indirme hatası:", err);
+    }
   };
 
   return (
@@ -1675,6 +1710,8 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                                 setLightboxImage({
                                   url: fileMeta!.thumbnail!,
                                   name: fileMeta!.name,
+                                  fileId: fileMeta!.id,
+                                  meta: fileMeta,
                                 })
                               }
                               className="mb-2 max-w-[260px] rounded-lg overflow-hidden border border-black/20 bg-black/40 cursor-pointer group relative hover:opacity-95 transition-opacity"
@@ -1722,7 +1759,11 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                                   {downloadingFileId === fileMeta.id ? (
                                     <>
                                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      <span>%{downloadProgress[fileMeta.id] || 0}</span>
+                                      <span>
+                                        {(downloadProgress[fileMeta.id] || 0) >= 100
+                                          ? "Kaydediliyor..."
+                                          : `%${downloadProgress[fileMeta.id] || 0}`}
+                                      </span>
                                     </>
                                   ) : (
                                     <>
@@ -2159,7 +2200,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-bold text-white">Voxa Masaüstü Uygulaması</span>
                       <span className="bg-[#23a55a]/20 text-[#23a55a] text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-[#23a55a]/30">
-                        v1.0.3 (Son Sürüm)
+                        v1.0.4 (Son Sürüm)
                       </span>
                     </div>
                     <p className="text-xs text-[#949ba4] mt-1 leading-relaxed">
@@ -2272,14 +2313,14 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
             className="absolute top-4 right-4 flex items-center gap-3 z-10"
             onClick={(e) => e.stopPropagation()}
           >
-            <a
-              href={lightboxImage.url}
-              download={lightboxImage.name}
-              className="px-3.5 py-2 bg-[#23a55a] hover:bg-[#1f934f] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg"
+            <button
+              type="button"
+              onClick={handleDownloadLightboxImage}
+              className="px-3.5 py-2 bg-[#23a55a] hover:bg-[#1f934f] text-white text-xs font-bold rounded-xl transition-all flex items-center gap-2 shadow-lg cursor-pointer"
             >
               <Download className="w-4 h-4" />
               <span>Görseli İndir</span>
-            </a>
+            </button>
             <button
               type="button"
               onClick={() => setLightboxImage(null)}

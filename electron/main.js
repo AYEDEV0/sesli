@@ -1,4 +1,7 @@
 const { app, BrowserWindow, ipcMain, desktopCapturer, session, shell, dialog, clipboard } = require("electron");
+const path = require("path");
+const fs = require("fs");
+const { autoUpdater } = require("electron-updater");
 
 // IPC Handler: Panoya Metin Yazma (Davet Linkleri vb.)
 ipcMain.handle("clipboard-write-text", async (event, text) => {
@@ -8,8 +11,77 @@ ipcMain.handle("clipboard-write-text", async (event, text) => {
   }
   return false;
 });
-const path = require("path");
-const { autoUpdater } = require("electron-updater");
+
+// IPC Handler: Dosyayı Windows Gezgini / Farklı Kaydet Penceresi ile Diske Kaydetme
+ipcMain.handle("save-file", async (event, { buffer, filename }) => {
+  try {
+    if (!buffer) {
+      return { success: false, error: "Kaydedilecek dosya verisi boş." };
+    }
+
+    const downloadsFolder = app.getPath("downloads");
+    const safeFilename = filename || `voxa_dosya_${Date.now()}`;
+    const defaultSavePath = path.join(downloadsFolder, safeFilename);
+
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+    if (win && !win.isDestroyed()) {
+      win.focus();
+    }
+
+    const ext = path.extname(safeFilename).replace(".", "");
+    const filters = [];
+    if (ext) {
+      filters.push({
+        name: `${ext.toUpperCase()} Dosyası (*.${ext})`,
+        extensions: [ext],
+      });
+    }
+    filters.push({ name: "Tüm Dosyalar (*.*)", extensions: ["*"] });
+
+    const dialogOptions = {
+      title: "Dosyayı Kaydet - Voxa",
+      defaultPath: defaultSavePath,
+      buttonLabel: "Kaydet",
+      filters,
+    };
+
+    // Windows native dosya kaydetme diyaloğu (Farklı Kaydet)
+    const { canceled, filePath } = win && !win.isDestroyed()
+      ? await dialog.showSaveDialog(win, dialogOptions)
+      : await dialog.showSaveDialog(dialogOptions);
+
+    if (canceled || !filePath) {
+      return { success: false, canceled: true };
+    }
+
+    let nodeBuffer;
+    if (Buffer.isBuffer(buffer)) {
+      nodeBuffer = buffer;
+    } else if (buffer instanceof ArrayBuffer) {
+      nodeBuffer = Buffer.from(buffer);
+    } else if (ArrayBuffer.isView(buffer)) {
+      nodeBuffer = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } else if (buffer && buffer.data && Array.isArray(buffer.data)) {
+      nodeBuffer = Buffer.from(buffer.data);
+    } else {
+      nodeBuffer = Buffer.from(buffer);
+    }
+
+    await fs.promises.writeFile(filePath, nodeBuffer);
+
+    // Kaydedilen dosyayı Windows Gezgini'nde göster ve seçili yap
+    try {
+      shell.showItemInFolder(filePath);
+    } catch (e) {
+      console.warn("Dosya gezginde gösterilemedi:", e);
+    }
+
+    return { success: true, filePath };
+  } catch (err) {
+    console.error("Electron save-file hatası:", err);
+    return { success: false, error: err ? err.message : "Bilinmeyen bir hata oluştu" };
+  }
+});
 
 // Ekran ve Ses Yakalama için Chromium Flag'leri
 app.commandLine.appendSwitch("enable-usermedia-screen-capturing");
@@ -43,6 +115,22 @@ function createWindow() {
     } else {
       callback(false);
     }
+  });
+
+  // Tarayıcı içi doğrudan indirmelerde Windows Farklı Kaydet penceresi aç
+  session.defaultSession.on("will-download", (event, item, webContents) => {
+    const downloadsFolder = app.getPath("downloads");
+    item.setSaveDialogOptions({
+      title: "Dosyayı Kaydet - Voxa",
+      defaultPath: path.join(downloadsFolder, item.getFilename()),
+    });
+    item.once("done", (event, state) => {
+      if (state === "completed") {
+        try {
+          shell.showItemInFolder(item.getSavePath());
+        } catch {}
+      }
+    });
   });
 
 let pendingDesktopSourceId = null;

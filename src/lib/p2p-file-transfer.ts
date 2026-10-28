@@ -112,6 +112,79 @@ const ICE_SERVERS: RTCConfiguration = {
 
 const CHUNK_SIZE = 64 * 1024; // 64 KB per WebRTC packet
 
+/**
+ * İndirilen dosyayı hem masaüstü (Electron - Windows Gezgini Farklı Kaydet)
+ * hem de standart web tarayıcılarında (File System Access API & Blob) kullanıcıya nereye kaydedeceğini sorarak güvenle kaydeder.
+ */
+export async function saveBlobToDisk(blob: Blob, filename: string): Promise<boolean> {
+  // 1. Masaüstü (Electron) Ortamı: Yerel Windows "Farklı Kaydet" Penceresi
+  if (typeof window !== "undefined" && (window as any).electronAPI?.saveFile) {
+    try {
+      const arrayBuffer = await blob.arrayBuffer();
+      const res = await (window as any).electronAPI.saveFile({
+        buffer: arrayBuffer,
+        filename,
+      });
+
+      if (res?.canceled) {
+        return false;
+      }
+      return Boolean(res?.success);
+    } catch (err) {
+      console.error("[P2P] Electron dosya kaydetme hatası:", err);
+    }
+  }
+
+  // 2. Modern Chromium Tarayıcıları (Chrome, Edge, Opera, Brave)
+  // Windows "Farklı Kaydet" penceresini doğrudan tarayıcı üzerinden açar
+  if (typeof window !== "undefined" && typeof (window as any).showSaveFilePicker === "function") {
+    try {
+      const dotIndex = filename.lastIndexOf(".");
+      const ext = dotIndex !== -1 ? filename.slice(dotIndex + 1).toLowerCase() : "";
+      const pickerOptions: any = {
+        suggestedName: filename,
+      };
+      if (ext) {
+        pickerOptions.types = [
+          {
+            description: `${ext.toUpperCase()} Dosyası`,
+            accept: {
+              [blob.type || "application/octet-stream"]: [`.${ext}`],
+            },
+          },
+        ];
+      }
+      const handle = await (window as any).showSaveFilePicker(pickerOptions);
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        // Kullanıcı kaydet penceresinde İptal butonuna bastı
+        return false;
+      }
+      console.warn("[P2P] showSaveFilePicker başarısız, standart indirmeye dönülüyor:", err);
+    }
+  }
+
+  // 3. Standart Web Tarayıcısı Fallback (<a> tag & createObjectURL)
+  try {
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+    return true;
+  } catch (err) {
+    console.error("[P2P] Web dosya indirme hatası:", err);
+    return false;
+  }
+}
+
 export class P2PTransferManager {
   private activePeerConnections = new Map<string, RTCPeerConnection>();
   private activeDataChannels = new Map<string, RTCDataChannel>();
@@ -138,14 +211,7 @@ export class P2PTransferManager {
     const local = getLocalFile(fileMeta.id);
     if (local) {
       try {
-        const blobUrl = URL.createObjectURL(local);
-        const a = document.createElement("a");
-        a.href = blobUrl;
-        a.download = fileMeta.name;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
+        await saveBlobToDisk(local, fileMeta.name);
         onProgress(100);
         onComplete();
         return;
@@ -163,13 +229,13 @@ export class P2PTransferManager {
       this.activePeerConnections.set(connectionKey, pc);
       this.pendingCandidates.set(connectionKey, []);
 
-      // 15 saniye zaman aşımı kontrolü
+      // 20 saniye zaman aşımı kontrolü
       const watchdog = setTimeout(() => {
         if (!this.isCancelledMap.get(fileMeta.id)) {
           onError("P2P dosya aktarımı zaman aşımına uğradı. Karşı taraf çevrimdışı olabilir.");
           this.closeConnection(connectionKey);
         }
-      }, 15000);
+      }, 20000);
       this.activeWatchdogs.set(fileMeta.id, watchdog);
 
       pc.onicecandidate = (e) => {
@@ -184,13 +250,43 @@ export class P2PTransferManager {
 
       const receivedChunks: ArrayBuffer[] = [];
       let receivedBytes = 0;
+      let isTransferFinalized = false;
+
+      const finalizeTransfer = async () => {
+        if (isTransferFinalized) return;
+        isTransferFinalized = true;
+        this.clearWatchdog(fileMeta.id);
+
+        try {
+          const blob = new Blob(receivedChunks, {
+            type: fileMeta.type || "application/octet-stream",
+          });
+
+          // İndirilen dosyayı yerel önbelleğe de kaydet
+          try {
+            const cachedFile = new File([blob], fileMeta.name, {
+              type: fileMeta.type || "application/octet-stream",
+            });
+            localFilesStore.set(fileMeta.id, cachedFile);
+          } catch {}
+
+          onProgress(100);
+          await saveBlobToDisk(blob, fileMeta.name);
+          onComplete();
+        } catch (err: any) {
+          console.error("[P2P] Dosya tamamlama/kaydetme hatası:", err);
+          onError("Dosya diske kaydedilemedi.");
+        } finally {
+          this.closeConnection(connectionKey);
+        }
+      };
 
       pc.ondatachannel = (event) => {
         const channel = event.channel;
         this.activeDataChannels.set(connectionKey, channel);
         channel.binaryType = "arraybuffer";
 
-        channel.onmessage = (msgEvent) => {
+        channel.onmessage = async (msgEvent) => {
           if (this.isCancelledMap.get(fileMeta.id)) {
             this.closeConnection(connectionKey);
             return;
@@ -200,22 +296,7 @@ export class P2PTransferManager {
             try {
               const meta = JSON.parse(msgEvent.data);
               if (meta.type === "EOF") {
-                this.clearWatchdog(fileMeta.id);
-                const blob = new Blob(receivedChunks, {
-                  type: fileMeta.type || "application/octet-stream",
-                });
-                const blobUrl = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = blobUrl;
-                a.download = fileMeta.name;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-
-                setTimeout(() => URL.revokeObjectURL(blobUrl), 10000);
-                onProgress(100);
-                onComplete();
-                this.closeConnection(connectionKey);
+                await finalizeTransfer();
               } else if (meta.type === "P2P_CANCEL") {
                 this.clearWatchdog(fileMeta.id);
                 onError("İndirme karşı tarafça iptal edildi.");
@@ -228,11 +309,20 @@ export class P2PTransferManager {
           }
 
           // Gelen binary chunk'ları topla
-          this.clearWatchdog(fileMeta.id); // İlk paket geldiğinde watchdog'u temizle
+          this.clearWatchdog(fileMeta.id);
           receivedChunks.push(msgEvent.data);
           receivedBytes += msgEvent.data.byteLength;
           const progress = Math.min(100, Math.round((receivedBytes / fileMeta.size) * 100));
           onProgress(progress);
+
+          // Çift Güvenlik: Tüm baytlar eksiksiz ulaştıysa (%100) ve 400ms içinde EOF gelmezse transferi tamamla
+          if (receivedBytes >= fileMeta.size && !isTransferFinalized) {
+            setTimeout(() => {
+              if (!isTransferFinalized) {
+                finalizeTransfer();
+              }
+            }, 400);
+          }
         };
 
         channel.onerror = () => {
@@ -289,53 +379,65 @@ export class P2PTransferManager {
     this.activeDataChannels.set(connectionKey, dataChannel);
     dataChannel.binaryType = "arraybuffer";
 
-    dataChannel.onopen = () => {
-      let offset = 0;
+    dataChannel.onopen = async () => {
       dataChannel.bufferedAmountLowThreshold = 8 * CHUNK_SIZE;
+      let offset = 0;
 
-      const sendNextSlice = () => {
-        if (this.isCancelledMap.get(fileId)) {
-          this.closeConnection(connectionKey);
-          return;
-        }
-
-        if (offset >= file.size) {
-          try {
-            dataChannel.send(JSON.stringify({ type: "EOF" }));
-          } catch {}
-          return;
-        }
-
-        while (
-          offset < file.size &&
-          dataChannel.bufferedAmount <= dataChannel.bufferedAmountLowThreshold
-        ) {
+      try {
+        while (offset < file.size) {
           if (this.isCancelledMap.get(fileId) || dataChannel.readyState !== "open") {
+            this.closeConnection(connectionKey);
+            return;
+          }
+
+          // Backpressure: DataChannel tamponu dolduğunda boşalmasını bekle
+          if (dataChannel.bufferedAmount > dataChannel.bufferedAmountLowThreshold) {
+            await new Promise<void>((resolve) => {
+              let resolved = false;
+              const handleLow = () => {
+                if (resolved) return;
+                resolved = true;
+                dataChannel.onbufferedamountlow = null;
+                resolve();
+              };
+              dataChannel.onbufferedamountlow = handleLow;
+              // 500ms güvenlik zaman aşımı
+              setTimeout(handleLow, 500);
+            });
+          }
+
+          if (this.isCancelledMap.get(fileId) || dataChannel.readyState !== "open") {
+            this.closeConnection(connectionKey);
             return;
           }
 
           const slice = file.slice(offset, offset + CHUNK_SIZE);
-          const reader = new FileReader();
-          reader.onload = (e) => {
-            if (dataChannel.readyState !== "open") return;
-            try {
-              const buffer = e.target?.result as ArrayBuffer;
-              dataChannel.send(buffer);
-            } catch {}
-          };
-          reader.readAsArrayBuffer(slice);
+          const buffer = await slice.arrayBuffer();
+
+          if (this.isCancelledMap.get(fileId) || dataChannel.readyState !== "open") {
+            this.closeConnection(connectionKey);
+            return;
+          }
+
+          dataChannel.send(buffer);
           offset += CHUNK_SIZE;
         }
 
-        if (offset < file.size) {
-          dataChannel.onbufferedamountlow = () => {
-            dataChannel.onbufferedamountlow = null;
-            sendNextSlice();
-          };
+        // Tüm binary parçaların ağ katmanına yazılmasını bekle
+        while (dataChannel.bufferedAmount > 0) {
+          if (this.isCancelledMap.get(fileId) || dataChannel.readyState !== "open") {
+            return;
+          }
+          await new Promise((r) => setTimeout(r, 40));
         }
-      };
 
-      sendNextSlice();
+        // Bütün veriler eksiksiz gönderildi; EOF sinyalini ilet
+        if (dataChannel.readyState === "open" && !this.isCancelledMap.get(fileId)) {
+          dataChannel.send(JSON.stringify({ type: "EOF" }));
+        }
+      } catch (err) {
+        console.error("[P2P] Dosya gönderim hatası:", err);
+      }
     };
 
     dataChannel.onmessage = (e) => {
