@@ -215,6 +215,14 @@ Gelecekte projeye devam ederken aşağıdaki sıralamayla geliştirmeler yapıla
 - **Uygulama Yöntemi:**
   - `@livekit/client` kütüphanesinin yerleşik `E2EEOptions` ve Web Worker tabanlı Cryptor altyapısı aktifleştirilir.
 
+### 10. 🎵 Spotify Birlikte Şarkı Dinleme (Spotify Jam & Voxa DJ Altyapısı)
+- **Amaç:** Odadaki kullanıcıların Voxa uygulamasından çıkmadan senkronize müzik dinleyebilmesi, ortak çalma listesi oluşturabilmesi ve şarkı oylaması yapabilmesi.
+- **Uygulama Modelleri:**
+  - **Model A (Voxa DJ - WebRTC Stereo Track):** Host parçayı çalar, LiveKit üzerinden ayrı bir Stereo Opus ses track'i olarak odaya basılır; Free kullanıcılar dahil herkes doğrudan Voxa içinden dinler.
+  - **Model B (Resmi Spotify Jam - Web Playback SDK):** Premium kullanıcılar için 0 sunucu kotasıyla doğrudan Spotify CDN'inden senkronize 320 kbps çalma.
+  - **Model C (Akıllı Hibrit):** Premium olanlar doğrudan Spotify'dan, hesabı olmayanlar ise canlı DJ yayınından dinler.
+- **Öne Çıkan Özellikler:** Canlı süre senkronizasyonu, ortak şarkı arama ve kuyruk (Queue), geçme oylaması (Vote-to-Skip) ve biri konuştuğunda müziğin sesini kısan akıllı ses kısma (Audio Ducking).
+
 ---
 
 ## 💻 Masaüstü Uygulaması (Electron) Çalıştırma ve Build

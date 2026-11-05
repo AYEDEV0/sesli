@@ -137,3 +137,55 @@ Projeye bir sonraki aşamada devam edildiğinde sırasıyla uygulanacak özellik
 - **Uygulama Adımları:**
   - `@livekit/client` yerleşik `E2EEManager` ve Web Worker motoru kullanılacak.
   - Odaya girişte opsiyonel bir "Şifreleme Parolası (Passphrase)" alanı eklenecek.
+
+---
+
+### 7. 🎵 Spotify Birlikte Şarkı Dinleme (Spotify Jam & Voxa DJ Altyapısı - Model 3 Akıllı Hibrit)
+- [x] **Durum:** Tamamlandı (Model 3: Akıllı Hibrit Model Entegre Edildi)
+- **Hedef:** Odadaki kullanıcıların Voxa uygulamasından çıkmadan, tıpkı Spotify Jam veya Discord müzik botu gibi birlikte senkronize müzik dinleyebilmesi; ortak çalma listesi (kuyruk) oluşturabilmesi, şarkı arayabilmesi, oylamayla şarkı geçebilmesi ve müzik sesini bağımsız ayarlayabilmesi.
+- **Yapılanlar:**
+  - `src/types/spotify.ts` ve `src/lib/spotify.ts` ile tam tip güvenliği, PKCE OAuth yardımcıları, zengin demo şarkı kütüphanesi ve anında arama mekanizması kuruldu.
+  - `/api/spotify/search` ve `/api/spotify/token` ile sunucu taraflı Client Credentials arama & token değişimi rotaları eklendi.
+  - `/api/spotify/callback` ile güvenli açılır pencere (popup) yetkilendirme sayfası oluşturuldu.
+  - `src/components/SpotifyPlayer.tsx` ile Glassmorphism mini player, canlı süre ve seek bar, ortak kuyruk yönetimi, oylama ("Vote-to-Skip"), Web Audio API tabanlı yumuşak ses kontrolü ve **Akıllı Ses Kısma (Audio Ducking - birisi konuştuğunda müziğin sesini otomatik kısma)** eksiksiz entegre edildi.
+  - LiveKit DataChannel (`VOXA_SPOTIFY_*`) üzerinden odadaki tüm katılımcılar arasında milisaniyelik gecikme telafili eşzamanlı dinleme sağlandı.
+
+#### 🎛️ Seçilebilecek 3 Mimari Model (Karar Matrisi):
+1. **Model 1: "Voxa DJ / Sanal Stereo Track" (WebRTC Audio Stream — En Kapsayıcı):**
+   - *Çalışma Prensibi:* Odanın Host/DJ kullanıcısı Spotify'ı başlatır. Parçanın sesi LiveKit odasına ayrı bir `LocalAudioTrack` (High-Fidelity Stereo Opus 128-192 kbps, gürültü filtresiz) olarak basılır.
+   - *Artıları:* Odadaki dinleyicilerin **Spotify hesabı olmasına veya Premium üyeliğe kesinlikle ihtiyacı yoktur**. Herkes Voxa içinden doğrudan ve anında duyar.
+   - *Gereksinim:* Müzik sesi LiveKit üzerinden aktığı için sunucu bant genişliği kotası harcar (~55 MB/saat).
+2. **Model 2: "Resmi Spotify Jam Klonu" (Web Playback SDK & DataChannel Senkronizasyonu):**
+   - *Çalışma Prensibi:* Odadaki herkes Spotify Premium hesabıyla bağlanır. Tarayıcı/Electron içi `Spotify.Player` başlatılır. Şarkı LiveKit DataChannel üzerinden anlık timestamp ile senkronize edilir (`action: "PLAY" | "SEEK"`).
+   - *Artıları:* **0 Bayt Sunucu Kotası!** Müzik doğrudan Spotify CDN'inden 320 kbps saf kalitede çalar.
+   - *Kısıtı:* Dinleyicilerin tamamının Spotify Premium abonesi olması zorunludur.
+3. **Model 3: "Akıllı Hibrit Model" (Önerilen En Gelişmiş Çözüm):**
+   - *Çalışma Prensibi:* Odada tek bir modern müzik konsolu açılır. Premium olanlar doğrudan Spotify CDN'inden dinlemeyi seçebilir (kotasız & 320 kbps), hesabı olmayan veya Free hesabı olanlar içinse Host'un canlı stereo ses akışı devreye girer.
+
+#### 🛠️ Detaylı Uygulama Adımları & Dosya Planı:
+- [ ] **Aşama 1: Spotify Geliştirici & OAuth 2.0 PKCE Entegrasyonu:**
+  - `src/lib/spotify.ts`: Spotify Web API istemcisi (Arama, Cihaz Yönetimi, Şarkı Bilgisi alma).
+  - `src/app/api/spotify/login/route.ts` & `/callback/route.ts`: PKCE akışıyla güvenli token alımı.
+- [ ] **Aşama 2: LiveKit DataChannel Senkronizasyon Protokolü:**
+  - `src/app/[roomName]/page.tsx` içerisine yeni mesajlaşma aksiyonları:
+    ```json
+    {
+      "type": "VOXA_SPOTIFY_ACTION",
+      "action": "PLAY" | "PAUSE" | "SEEK" | "QUEUE_ADD" | "VOTE_SKIP",
+      "track": { "id": "...", "name": "...", "artists": "...", "albumArt": "...", "durationMs": 0 },
+      "positionMs": 45000,
+      "sentAt": 1718000000000,
+      "sender": "Halil"
+    }
+    ```
+  - Drift (zaman kayması) telafi formülü: `(Date.now() - sentAt)` ağ gecikmesini hesaba katarak milisaniye sapmalarını otomatik düzeltme.
+- [ ] **Aşama 3: Müzik Çalar Konsolu UI (`src/components/SpotifyPlayer.tsx`):**
+  - Odada sahne altında veya sağ tarafta cam efektli (Glassmorphism) mini player.
+  - Dönen albüm kapağı, anlık süre ilerleme çubuğu (Seek Bar), Play/Pause/Next kontrolleri.
+  - Canlı ses spektrum/equalizer animasyonu.
+- [ ] **Aşama 4: Ortak Müzik Kuyruğu & Şarkı Arama Modalı:**
+  - Herkesin şarkı adı/sanatçı aratıp tek tıkla ortak listeye şarkı ekleyebilmesi (`QUEUE_ADD`).
+  - Şarkı Geçme Oylaması ("Vote to Skip"): Katılımcıların %50'si oy verdiğinde şarkının otomatik atlanması.
+- [ ] **Aşama 5: Akıllı Ses Yönetimi (Audio Ducking) & Bağımsız Ses Ayarı:**
+  - Her katılımcının müzik sesini konuşma seslerinden ayrı (%0 - %200) ayarlayabilmesi.
+  - **Audio Ducking:** Odada bir katılımcı konuştuğunda müziğin sesinin otomatik %20'ye inmesi, konuşma bitince yumuşakça (fade-in) eski seviyeye dönmesi.
