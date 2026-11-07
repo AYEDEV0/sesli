@@ -111,6 +111,15 @@ export function YouTubePlayer({
   const stateRef = useRef<YouTubePlaybackState>(playbackState);
   stateRef.current = playbackState;
 
+  const participantsRef = useRef(participants);
+  participantsRef.current = participants;
+
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
+  const handleSkipNextRef = useRef<() => void>(() => {});
+  const lastEndHandledRef = useRef<number>(0);
+
   // WebRTC / LiveKit geçici bağlantı hatalarını konsolu kirletmeden yakala
   useEffect(() => {
     const handleRejection = (e: PromiseRejectionEvent) => {
@@ -168,8 +177,36 @@ export function YouTubePlayer({
               if (!isMounted) return;
               // 0 = YT.PlayerState.ENDED
               if (event.data === 0) {
-                // Şarkı bittiğinde sıradakine geç
-                handleSkipNext();
+                const now = Date.now();
+                if (now - lastEndHandledRef.current < 1500) {
+                  return; // Çoklu tetiklenmeyi engelle
+                }
+                lastEndHandledRef.current = now;
+
+                const current = stateRef.current;
+                const activeParticipants = participantsRef.current;
+                const me = currentUserRef.current;
+
+                // Odada DJ varsa sadece DJ geçişi başlatsın (veya kullanıcı tekse / DJ çıkmışsa)
+                const isDJ =
+                  !current.djIdentity ||
+                  current.djIdentity === me.identity ||
+                  !activeParticipants.some((p) => p.identity === current.djIdentity);
+
+                if (isDJ) {
+                  handleSkipNextRef.current();
+                } else {
+                  // Dinleyici için yedek güvenlik (DJ şarkıyı geçmediyse 2.5s sonra geç)
+                  setTimeout(() => {
+                    if (
+                      isMounted &&
+                      stateRef.current.currentTrack?.id === current.currentTrack?.id &&
+                      stateRef.current.isPlaying
+                    ) {
+                      handleSkipNextRef.current();
+                    }
+                  }, 2500);
+                }
               }
             },
             onError: (err: any) => {
@@ -383,25 +420,37 @@ export function YouTubePlayer({
             break;
           }
 
+          case "VOXA_YT_QUEUE_CLEAR": {
+            setPlaybackState((prev) => ({
+              ...prev,
+              queue: [],
+            }));
+            break;
+          }
+
           case "VOXA_YT_SKIP": {
-            setPlaybackState((prev) => {
-              const nextQueue = [...prev.queue];
-              const nextTrack = nextQueue.shift() || null;
-              if (nextTrack) {
-                applyLocalPlay(nextTrack, 0);
-              } else {
-                applyLocalPause();
-              }
-              return {
-                ...prev,
-                currentTrack: nextTrack,
-                queue: nextQueue,
-                positionMs: 0,
-                durationMs: nextTrack?.durationMs || 0,
-                isPlaying: !!nextTrack,
-                voteSkips: [],
-              };
-            });
+            const nextTrack = msg.track || null;
+            const nextQueue =
+              msg.state?.queue !== undefined
+                ? msg.state.queue
+                : stateRef.current.queue.slice(1);
+
+            setPlaybackState((prev) => ({
+              ...prev,
+              currentTrack: nextTrack,
+              queue: nextQueue,
+              positionMs: 0,
+              durationMs: nextTrack?.durationMs || 0,
+              isPlaying: !!nextTrack,
+              voteSkips: [],
+              lastUpdated: Date.now(),
+            }));
+
+            if (nextTrack) {
+              applyLocalPlay(nextTrack, 0);
+            } else {
+              applyLocalPause();
+            }
             break;
           }
 
@@ -589,8 +638,13 @@ export function YouTubePlayer({
     broadcastSync("VOXA_YT_SEEK", { positionMs: newPos });
   };
 
-  const handleSkipNext = () => {
-    const nextQueue = [...playbackState.queue];
+  const handleSkipNext = useCallback(() => {
+    const current = stateRef.current;
+    if (current.queue.length === 0 && !current.currentTrack) {
+      return;
+    }
+
+    const nextQueue = [...current.queue];
     const nextTrack = nextQueue.shift() || null;
 
     setPlaybackState((prev) => ({
@@ -601,6 +655,7 @@ export function YouTubePlayer({
       durationMs: nextTrack?.durationMs || 0,
       isPlaying: !!nextTrack,
       voteSkips: [],
+      lastUpdated: Date.now(),
     }));
 
     if (nextTrack) {
@@ -609,8 +664,20 @@ export function YouTubePlayer({
       applyLocalPause();
     }
 
-    broadcastSync("VOXA_YT_SKIP");
-  };
+    broadcastSync("VOXA_YT_SKIP", {
+      track: nextTrack || undefined,
+      state: {
+        queue: nextQueue,
+        isPlaying: !!nextTrack,
+        positionMs: 0,
+        durationMs: nextTrack?.durationMs || 0,
+      },
+    });
+  }, [applyLocalPlay, applyLocalPause, broadcastSync]);
+
+  useEffect(() => {
+    handleSkipNextRef.current = handleSkipNext;
+  }, [handleSkipNext]);
 
   const handleVoteToSkip = () => {
     const voters = new Set(playbackState.voteSkips);
@@ -639,12 +706,23 @@ export function YouTubePlayer({
       addedAt: Date.now(),
     };
 
+    // Eğer şu an hiçbir parça çalmıyorsa ve kuyruk boşsa doğrudan çal
+    if (!stateRef.current.currentTrack && !stateRef.current.isPlaying) {
+      handlePlayTrack(item);
+      return;
+    }
+
     setPlaybackState((prev) => ({
       ...prev,
       queue: [...prev.queue, item],
     }));
 
     broadcastSync("VOXA_YT_QUEUE_ADD", { track: item });
+  };
+
+  const handleClearQueue = () => {
+    setPlaybackState((prev) => ({ ...prev, queue: [] }));
+    broadcastSync("VOXA_YT_QUEUE_CLEAR");
   };
 
   const handleRemoveFromQueue = (trackId: string) => {
@@ -1076,7 +1154,7 @@ export function YouTubePlayer({
                   </h4>
                   {playbackState.queue.length > 0 && (
                     <button
-                      onClick={() => setPlaybackState((prev) => ({ ...prev, queue: [] }))}
+                      onClick={handleClearQueue}
                       className="text-[11px] text-red-400 hover:text-red-300 transition-colors cursor-pointer"
                     >
                       Kuyruğu Temizle

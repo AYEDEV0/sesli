@@ -27,6 +27,7 @@ export type YouTubeActionType =
   | "VOXA_YT_SEEK"
   | "VOXA_YT_QUEUE_ADD"
   | "VOXA_YT_QUEUE_REMOVE"
+  | "VOXA_YT_QUEUE_CLEAR"
   | "VOXA_YT_SKIP"
   | "VOXA_YT_VOTE_SKIP"
   | "VOXA_YT_SYNC_REQ"
