@@ -140,27 +140,17 @@ Projeye bir sonraki aşamada devam edildiğinde sırasıyla uygulanacak özellik
 
 ---
 
-### 7. 🎵 Spotify Birlikte Şarkı Dinleme (Spotify Jam & Voxa DJ Altyapısı - Model 3 Akıllı Hibrit)
-- [x] **Durum:** Tamamlandı (Model 3: Akıllı Hibrit Model Entegre Edildi)
-- **Hedef:** Odadaki kullanıcıların Voxa uygulamasından çıkmadan, tıpkı Spotify Jam veya Discord müzik botu gibi birlikte senkronize müzik dinleyebilmesi; ortak çalma listesi (kuyruk) oluşturabilmesi, şarkı arayabilmesi, oylamayla şarkı geçebilmesi ve müzik sesini bağımsız ayarlayabilmesi.
+### 7. 🎵 YouTube Jam (Birlikte Müzik Dinleme - Sınırsız & %100 Ücretsiz)
+- [x] **Durum:** Tamamlandı (YouTube Data API v3 & YouTube IFrame Player ile Sınırsız Dinleme)
+- **Neden YouTube?:** Spotify'ın Premium hesap zorunluluğu, 30 saniye önizleme kısıtı ve masaüstü/web DRM uyumsuzlukları yerine YouTube Data API v3 ve YouTube IFrame Player entegre edildi.
 - **Yapılanlar:**
-  - `src/types/spotify.ts` ve `src/lib/spotify.ts` ile tam tip güvenliği, PKCE OAuth yardımcıları, zengin demo şarkı kütüphanesi ve anında arama mekanizması kuruldu.
-  - `/api/spotify/search` ve `/api/spotify/token` ile sunucu taraflı Client Credentials arama & token değişimi rotaları eklendi.
-  - `/api/spotify/callback` ile güvenli açılır pencere (popup) yetkilendirme sayfası oluşturuldu.
-  - `src/components/SpotifyPlayer.tsx` ile Glassmorphism mini player, canlı süre ve seek bar, ortak kuyruk yönetimi, oylama ("Vote-to-Skip"), Web Audio API tabanlı yumuşak ses kontrolü ve **Akıllı Ses Kısma (Audio Ducking - birisi konuştuğunda müziğin sesini otomatik kısma)** eksiksiz entegre edildi.
-  - LiveKit DataChannel (`VOXA_SPOTIFY_*`) üzerinden odadaki tüm katılımcılar arasında milisaniyelik gecikme telafili eşzamanlı dinleme sağlandı.
-
-#### 🎛️ Seçilebilecek 3 Mimari Model (Karar Matrisi):
-1. **Model 1: "Voxa DJ / Sanal Stereo Track" (WebRTC Audio Stream — En Kapsayıcı):**
-   - *Çalışma Prensibi:* Odanın Host/DJ kullanıcısı Spotify'ı başlatır. Parçanın sesi LiveKit odasına ayrı bir `LocalAudioTrack` (High-Fidelity Stereo Opus 128-192 kbps, gürültü filtresiz) olarak basılır.
-   - *Artıları:* Odadaki dinleyicilerin **Spotify hesabı olmasına veya Premium üyeliğe kesinlikle ihtiyacı yoktur**. Herkes Voxa içinden doğrudan ve anında duyar.
-   - *Gereksinim:* Müzik sesi LiveKit üzerinden aktığı için sunucu bant genişliği kotası harcar (~55 MB/saat).
-2. **Model 2: "Resmi Spotify Jam Klonu" (Web Playback SDK & DataChannel Senkronizasyonu):**
-   - *Çalışma Prensibi:* Odadaki herkes Spotify Premium hesabıyla bağlanır. Tarayıcı/Electron içi `Spotify.Player` başlatılır. Şarkı LiveKit DataChannel üzerinden anlık timestamp ile senkronize edilir (`action: "PLAY" | "SEEK"`).
-   - *Artıları:* **0 Bayt Sunucu Kotası!** Müzik doğrudan Spotify CDN'inden 320 kbps saf kalitede çalar.
-   - *Kısıtı:* Dinleyicilerin tamamının Spotify Premium abonesi olması zorunludur.
-3. **Model 3: "Akıllı Hibrit Model" (Önerilen En Gelişmiş Çözüm):**
-   - *Çalışma Prensibi:* Odada tek bir modern müzik konsolu açılır. Premium olanlar doğrudan Spotify CDN'inden dinlemeyi seçebilir (kotasız & 320 kbps), hesabı olmayan veya Free hesabı olanlar içinse Host'un canlı stereo ses akışı devreye girer.
+  - **Sınırsız & Ücretsiz:** Kullanıcıların Spotify Premium hesabı açmasına veya oturum bağlamasına gerek kalmadan milyonlarca şarkı baştan sona tam süreyle dinlenebilir.
+  - **YouTube Data API v3 Arama (`src/app/api/youtube/search/route.ts`):** Şarkı veya video arandığında anlık olarak HD kapak, tam başlık, kanal adı ve ISO 8601'den milisaniyeye çevrilen gerçek video süresi döner.
+  - **Canlı Senkronizasyon (LiveKit DataChannel):** `VOXA_YT_*` mesajlaşma protokolü ile odadaki herkes aynı saniyede parçayı dinler (`PLAY`, `PAUSE`, `SEEK`, `SKIP`, `QUEUE_ADD`, `QUEUE_REMOVE`, `SYNC`).
+  - **Ortak Kuyruk & %50 Oy ile Geçme:** Katılımcılar şarkı arayıp sıraya ekleyebilir, %50 çoğunluk sağlandığında şarkı otomatik atlanır.
+  - **Genişletilmiş Mini Oynatıcı:** Alt barda thumbnail, anlık süre/seek barı, Oynat/Durdur, Sonraki Parça, Oy Ver ve **Doğrudan Ses Düzeyi Kaydırıcısı (%0 - %100)**.
+  - **Akıllı Ses Kısma (Audio Ducking):** Odada birisi konuştuğunda müziğin ses seviyesi otomatik %25'e düşer, konuşma bitince 700ms içinde yumuşakça eski seviyesine döner.
+  - **İsteğe Bağlı Video İzleme:** Çekmece panelinde "Video Açık/Kapalı" butonu ile video ekranı küçük bir pencere olarak izlenebilir veya sadece arka planda müzik olarak dinlenebilir.
 
 #### 🛠️ Detaylı Uygulama Adımları & Dosya Planı:
 - [ ] **Aşama 1: Spotify Geliştirici & OAuth 2.0 PKCE Entegrasyonu:**

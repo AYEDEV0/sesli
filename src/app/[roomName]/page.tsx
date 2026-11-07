@@ -61,7 +61,7 @@ import {
   Camera,
   Music,
 } from "lucide-react";
-import { SpotifyPlayer } from "@/components/SpotifyPlayer";
+import { YouTubePlayer } from "@/components/YouTubePlayer";
 import { useKrispNoiseFilter } from "@livekit/components-react/krisp";
 import { playJoinSound, playLeaveSound, playMuteSound } from "@/lib/sounds";
 import {
@@ -140,7 +140,7 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
   const [copied, setCopied] = useState<boolean>(false);
   const [selectedTrack, setSelectedTrack] = useState<TrackReferenceOrPlaceholder | null>(null);
   const [chatOpen, setChatOpen] = useState<boolean>(false);
-  const [spotifyDrawerOpen, setSpotifyDrawerOpen] = useState<boolean>(false);
+  const [musicDrawerOpen, setMusicDrawerOpen] = useState<boolean>(false);
 
   const [chatInput, setChatInput] = useState<string>("");
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -1211,18 +1211,18 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
             )}
           </button>
 
-          {/* Toggle Spotify Jam Button */}
+          {/* Toggle YouTube Jam Button */}
           <button
-            onClick={() => setSpotifyDrawerOpen(!spotifyDrawerOpen)}
+            onClick={() => setMusicDrawerOpen(!musicDrawerOpen)}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer border ${
-              spotifyDrawerOpen
-                ? "bg-[#1db954] text-black border-[#1db954] shadow-md shadow-[#1db954]/20"
+              musicDrawerOpen
+                ? "bg-red-600 text-white border-red-500 shadow-md shadow-red-600/25"
                 : "bg-[#1e1f22] hover:bg-[#35373c] text-white border-[#313338]"
             }`}
-            title="Spotify Birlikte Müzik Dinleme (Jam & Akıllı Hibrit)"
+            title="YouTube Birlikte Müzik Dinleme (Sınırsız & Ücretsiz)"
           >
-            <Music className={`w-4 h-4 ${spotifyDrawerOpen ? "text-black" : "text-[#1db954]"}`} />
-            <span className="hidden sm:inline">Spotify</span>
+            <Music className={`w-4 h-4 ${musicDrawerOpen ? "text-white" : "text-red-500"}`} />
+            <span className="hidden sm:inline">Müzik</span>
           </button>
 
           {/* Copy Invite Link Button */}
@@ -1995,17 +1995,17 @@ function CustomRoomUI({ roomName, username }: RoomContentProps) {
           </button>
         </div>
 
-        {/* Sağ Alan: Alt Bara Entegre Spotify Mini Oynatıcı */}
+        {/* Sağ Alan: Alt Bara Entegre YouTube Jam Mini Oynatıcı */}
         <div className="flex items-center justify-end">
-          <SpotifyPlayer
+          <YouTubePlayer
             room={room}
             currentUser={{
               identity: localParticipant.identity,
               name: getDisplayName(localParticipant),
             }}
-            isDrawerOpen={spotifyDrawerOpen}
-            onCloseDrawer={() => setSpotifyDrawerOpen(false)}
-            onToggleDrawer={() => setSpotifyDrawerOpen((prev) => !prev)}
+            isDrawerOpen={musicDrawerOpen}
+            onCloseDrawer={() => setMusicDrawerOpen(false)}
+            onToggleDrawer={() => setMusicDrawerOpen((prev) => !prev)}
             participants={participants}
           />
         </div>
