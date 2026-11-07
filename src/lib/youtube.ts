@@ -108,3 +108,4 @@ export async function searchYouTubeVideos(query: string): Promise<YouTubeTrack[]
 
   return filtered.length > 0 ? filtered : DEFAULT_YOUTUBE_TRACKS;
 }
+

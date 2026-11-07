@@ -28,6 +28,7 @@ import {
   Sparkles,
   Loader2,
   Mic,
+  MicOff,
   Video,
   VideoOff,
   Radio,
@@ -74,10 +75,26 @@ export function YouTubePlayer({
   // Kullanıcı Ses ve Ducking Ayarları
   const [volume, setVolume] = useState<number>(80);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [audioDuckingEnabled, setAudioDuckingEnabled] = useState<boolean>(true);
+  const [audioDuckingEnabled, setAudioDuckingEnabled] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("voxa_audio_ducking");
+      return saved === "true"; // Varsayılan olarak kapalı (kullanıcıyı rahatsız etmez)
+    }
+    return false;
+  });
   const [duckingFactor] = useState<number>(0.25);
   const [isDuckingActive, setIsDuckingActive] = useState<boolean>(false);
   const [showVideoPreview, setShowVideoPreview] = useState<boolean>(false);
+
+  const toggleAudioDucking = () => {
+    setAudioDuckingEnabled((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("voxa_audio_ducking", String(next));
+      }
+      return next;
+    });
+  };
 
   // Arama & Sekme Yönetimi
   const [activeTab, setActiveTab] = useState<"search" | "queue" | "video">("search");
@@ -665,19 +682,34 @@ export function YouTubePlayer({
 
   return (
     <>
-      {/* Gizli/Görünür YouTube IFrame Player Konteyneri */}
+      {/* Yüzen Video Önizleme Penceresi (Arama ekranı kapalı olsa bile izlenebilir) */}
       <div
-        className={`fixed transition-all duration-300 z-40 ${
-          showVideoPreview && isDrawerOpen
-            ? "bottom-24 right-6 w-80 h-48 rounded-2xl overflow-hidden shadow-2xl border border-white/20 bg-black"
+        className={`fixed transition-all duration-300 z-50 ${
+          showVideoPreview
+            ? "bottom-24 right-6 w-80 sm:w-96 aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/20 bg-black flex flex-col group animate-in fade-in zoom-in-95 duration-200"
             : "top-[-9999px] left-[-9999px] w-1 h-1 opacity-0 pointer-events-none"
         }`}
       >
+        {/* Video Başlık & Kapatma Butonu (Hover olunca görünür) */}
+        {showVideoPreview && (
+          <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-2.5 z-10 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[11px] font-bold text-white truncate max-w-[240px] drop-shadow">
+              {currentTrack?.title || "YouTube Videosu"}
+            </span>
+            <button
+              onClick={() => setShowVideoPreview(false)}
+              className="p-1 rounded-lg bg-black/60 hover:bg-red-600 text-white transition-colors cursor-pointer"
+              title="Video Penceresini Kapat"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
         <div id={playerContainerId} className="w-full h-full" />
       </div>
 
       {/* 1. ALT BARA ENTEGRE GENİŞLETİLMİŞ MİNİ OYNATICI */}
-      <div className="flex items-center gap-2 sm:gap-3 bg-[#1e1f22] hover:bg-[#232529] border border-[#383a40] rounded-2xl px-3 sm:px-4 py-2 shadow-lg transition-all select-none w-full max-w-[340px] sm:max-w-[440px] md:max-w-[500px] lg:max-w-[540px]">
+      <div className="flex items-center gap-2 sm:gap-3 bg-[#1e1f22] hover:bg-[#232529] border border-[#383a40] rounded-2xl px-3 sm:px-4 py-2 shadow-lg transition-all select-none w-full max-w-[340px] sm:max-w-[440px] md:max-w-[520px] lg:max-w-[560px]">
         {/* Thumbnail & Oynatma Efekti */}
         <div
           onClick={onToggleDrawer}
@@ -720,7 +752,7 @@ export function YouTubePlayer({
             <span className="truncate max-w-[130px] sm:max-w-[180px]">
               {currentTrack?.channelTitle || "YouTube"}
             </span>
-            {isDuckingActive && (
+            {isDuckingActive && audioDuckingEnabled && (
               <span className="text-[9px] text-amber-400 font-semibold flex items-center gap-0.5 shrink-0 animate-pulse">
                 <Mic className="w-2.5 h-2.5" /> Kısıldı
               </span>
@@ -811,6 +843,36 @@ export function YouTubePlayer({
           </span>
         </div>
 
+        {/* Konuşurken Sesi Kısma (Audio Ducking) Aç/Kapa Hızlı Butonu */}
+        <button
+          onClick={toggleAudioDucking}
+          className={`p-1.5 rounded-xl transition-all cursor-pointer hidden md:flex items-center shrink-0 ${
+            audioDuckingEnabled
+              ? "text-amber-400 bg-amber-400/15"
+              : "text-[#71717a] hover:text-[#a1a1aa] hover:bg-white/5"
+          }`}
+          title={
+            audioDuckingEnabled
+              ? "Konuşurken Otomatik Ses Kısma: AÇIK (Kapatmak için tıkla)"
+              : "Konuşurken Otomatik Ses Kısma: KAPALI (Açmak için tıkla)"
+          }
+        >
+          {audioDuckingEnabled ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+        </button>
+
+        {/* Yüzen Video Penceresini Aç/Kapat Butonu */}
+        <button
+          onClick={() => setShowVideoPreview(!showVideoPreview)}
+          className={`p-1.5 rounded-xl transition-all cursor-pointer hidden sm:flex items-center shrink-0 ${
+            showVideoPreview
+              ? "text-red-500 bg-red-500/15"
+              : "text-[#71717a] hover:text-white hover:bg-white/5"
+          }`}
+          title={showVideoPreview ? "Video Penceresini Gizle" : "Video Penceresini Göster"}
+        >
+          {showVideoPreview ? <Video className="w-3.5 h-3.5" /> : <VideoOff className="w-3.5 h-3.5" />}
+        </button>
+
         {/* Çekmeceyi Aç Butonu */}
         <button
           onClick={onToggleDrawer}
@@ -827,30 +889,38 @@ export function YouTubePlayer({
       {isDrawerOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200">
           <div className="bg-[#121212] border border-white/10 rounded-t-3xl sm:rounded-3xl w-full max-w-2xl h-[85vh] sm:h-[640px] flex flex-col shadow-2xl overflow-hidden text-white">
-            {/* Modal Başlığı */}
+            {/* Modal Başlığı (Sade ve Minimalist) */}
             <div className="px-6 py-4 bg-[#18181b] border-b border-white/10 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-red-600/20 border border-red-500/40 flex items-center justify-center text-red-500">
                   <Tv className="w-4 h-4" />
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold flex items-center gap-2">
-                    Voxa YouTube Jam
-                    <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded bg-red-500/20 text-red-400 border border-red-500/30">
-                      Sınırsız & Ücretsiz
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-[#a1a1aa]">
-                    Odadaki herkesle senkronize YouTube müziği dinleyin ve video izleyin
-                  </p>
-                </div>
+                <h3 className="text-sm font-bold text-white tracking-wide">
+                  YouTube Jam
+                </h3>
               </div>
 
               <div className="flex items-center gap-2">
+                {/* Konuşurken Sesi Kısma Ayarı Butonu */}
+                <button
+                  onClick={toggleAudioDucking}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    audioDuckingEnabled
+                      ? "bg-amber-400/15 text-amber-300 border-amber-400/30"
+                      : "bg-white/5 hover:bg-white/10 text-[#a1a1aa] border-white/5"
+                  }`}
+                  title="Odada biri konuşurken müziğin sesini otomatik kıs"
+                >
+                  {audioDuckingEnabled ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">
+                    {audioDuckingEnabled ? "Konuşma Kısması Açık" : "Konuşma Kısması Kapalı"}
+                  </span>
+                </button>
+
                 {/* Video Önizleme Aç/Kapa Butonu */}
                 <button
                   onClick={() => setShowVideoPreview(!showVideoPreview)}
-                  className={`p-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                     showVideoPreview
                       ? "bg-red-600/20 text-red-400 border-red-500/30"
                       : "bg-white/5 hover:bg-white/10 text-[#a1a1aa] border-white/5"
@@ -1068,3 +1138,4 @@ export function YouTubePlayer({
     </>
   );
 }
+
