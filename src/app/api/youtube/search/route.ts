@@ -4,8 +4,6 @@ import { parseISO8601Duration, formatDuration } from "@/lib/youtube";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_YOUTUBE_API_KEY = "AIzaSyDOQ9AyPIRzM_xXxC_Q6KobrZASicFKuDE";
-
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
@@ -17,8 +15,12 @@ export async function GET(request: NextRequest) {
 
     const apiKey =
       process.env.YOUTUBE_API_KEY ||
-      process.env.NEXT_PUBLIC_YOUTUBE_API_KEY ||
-      DEFAULT_YOUTUBE_API_KEY;
+      process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+
+    if (!apiKey) {
+      console.warn("YOUTUBE_API_KEY environment variable is not defined.");
+      return NextResponse.json({ tracks: [] });
+    }
 
     const trimmed = query.trim();
 
