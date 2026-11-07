@@ -70,10 +70,10 @@ export async function GET(request: NextRequest) {
           title: snippet.title || "YouTube Videosu",
           channelTitle: snippet.channelTitle || "YouTube",
           thumbnail:
-            snippet.thumbnails?.high?.url ||
             snippet.thumbnails?.medium?.url ||
+            snippet.thumbnails?.high?.url ||
             snippet.thumbnails?.default?.url ||
-            `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            `https://i.ytimg.com/vi/${id}/mqdefault.jpg`,
           durationMs: 200000,
           durationFormatted: "03:20",
         };
@@ -112,10 +112,10 @@ export async function GET(request: NextRequest) {
           .replace(/&gt;/g, ">");
 
         const thumbnail =
-          snippet.thumbnails?.maxres?.url ||
-          snippet.thumbnails?.high?.url ||
           snippet.thumbnails?.medium?.url ||
-          `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
+          snippet.thumbnails?.high?.url ||
+          snippet.thumbnails?.default?.url ||
+          `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
         return {
           id,

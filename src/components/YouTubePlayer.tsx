@@ -123,10 +123,13 @@ export function YouTubePlayer({
   // WebRTC / LiveKit geçici bağlantı hatalarını konsolu kirletmeden yakala
   useEffect(() => {
     const handleRejection = (e: PromiseRejectionEvent) => {
+      const msg = e.reason?.message || "";
+      const name = e.reason?.name || "";
       if (
-        e.reason?.message?.includes("PC manager is closed") ||
-        e.reason?.name === "UnexpectedConnectionState" ||
-        e.reason?.message?.includes("cannot negotiate on closed engine")
+        msg.includes("PC manager is closed") ||
+        name === "UnexpectedConnectionState" ||
+        msg.includes("cannot negotiate on closed engine") ||
+        name === "NegotiationError"
       ) {
         e.preventDefault();
       }
@@ -762,28 +765,37 @@ export function YouTubePlayer({
     <>
       {/* Yüzen Video Önizleme Penceresi (Arama ekranı kapalı olsa bile izlenebilir) */}
       <div
-        className={`fixed transition-all duration-300 z-50 ${
+        className={`fixed transition-all duration-300 z-50 rounded-2xl overflow-hidden shadow-2xl border border-white/20 bg-black ${
           showVideoPreview
-            ? "bottom-24 right-6 w-80 sm:w-96 aspect-video rounded-2xl overflow-hidden shadow-2xl border border-white/20 bg-black flex flex-col group animate-in fade-in zoom-in-95 duration-200"
+            ? "bottom-24 right-6 w-80 sm:w-96 aspect-video group animate-in fade-in zoom-in-95 duration-200"
             : "top-[-9999px] left-[-9999px] w-1 h-1 opacity-0 pointer-events-none"
         }`}
       >
-        {/* Video Başlık & Kapatma Butonu (Hover olunca görünür) */}
-        {showVideoPreview && (
-          <div className="absolute top-0 inset-x-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-2.5 z-10 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity">
-            <span className="text-[11px] font-bold text-white truncate max-w-[240px] drop-shadow">
-              {currentTrack?.title || "YouTube Videosu"}
-            </span>
-            <button
-              onClick={() => setShowVideoPreview(false)}
-              className="p-1 rounded-lg bg-black/60 hover:bg-red-600 text-white transition-colors cursor-pointer"
-              title="Video Penceresini Kapat"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-        <div id={playerContainerId} className="w-full h-full" />
+        {/* Video Başlık & Kapatma Butonu (DOM'da daima sabit kalır, böylece React insertBefore hatası vermez) */}
+        <div
+          className={`absolute top-0 inset-x-0 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-2.5 z-20 flex items-center justify-between transition-opacity ${
+            showVideoPreview
+              ? "opacity-0 group-hover:opacity-100"
+              : "opacity-0 pointer-events-none"
+          }`}
+        >
+          <span className="text-[11px] font-bold text-white truncate max-w-[240px] drop-shadow">
+            {currentTrack?.title || "YouTube Videosu"}
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowVideoPreview(false)}
+            className="p-1 rounded-lg bg-black/60 hover:bg-red-600 text-white transition-colors cursor-pointer"
+            title="Video Penceresini Kapat"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* İzole YouTube Player Yuvası */}
+        <div className="w-full h-full relative z-10 pointer-events-auto">
+          <div id={playerContainerId} className="w-full h-full" />
+        </div>
       </div>
 
       {/* 1. ALT BARA ENTEGRE GENİŞLETİLMİŞ MİNİ OYNATICI */}
@@ -798,6 +810,9 @@ export function YouTubePlayer({
             <img
               src={currentTrack.thumbnail}
               alt={currentTrack.title}
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
               className={`w-full h-full object-cover transition-transform duration-700 ${
                 playbackState.isPlaying ? "scale-105" : "grayscale"
               }`}
@@ -1082,6 +1097,9 @@ export function YouTubePlayer({
                         <img
                           src={track.thumbnail}
                           alt={track.title}
+                          onError={(e) => {
+                            e.currentTarget.src = `https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`;
+                          }}
                           className="w-12 h-10 rounded-lg object-cover bg-black/40 shrink-0"
                         />
                         <div className="min-w-0">
@@ -1131,6 +1149,11 @@ export function YouTubePlayer({
                     <img
                       src={currentTrack?.thumbnail}
                       alt=""
+                      onError={(e) => {
+                        if (currentTrack?.id) {
+                          e.currentTarget.src = `https://i.ytimg.com/vi/${currentTrack.id}/mqdefault.jpg`;
+                        }
+                      }}
                       className="w-12 h-10 rounded-lg object-cover"
                     />
                     <div className="min-w-0">
@@ -1182,6 +1205,9 @@ export function YouTubePlayer({
                           <img
                             src={track.thumbnail}
                             alt=""
+                            onError={(e) => {
+                              e.currentTarget.src = `https://i.ytimg.com/vi/${track.id}/mqdefault.jpg`;
+                            }}
                             className="w-10 h-8 rounded-lg object-cover"
                           />
                           <div className="min-w-0">
